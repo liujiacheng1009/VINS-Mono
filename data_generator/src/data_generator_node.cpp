@@ -14,6 +14,7 @@
 #include <image_transport/image_transport.h>
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/image_encodings.h>
+#include <cstdlib>
 
 using namespace std;
 using namespace Eigen;
@@ -48,6 +49,7 @@ int main(int argc, char **argv)
 
     DataGenerator generator;
     ros::Rate loop_rate(generator.FREQ);
+    const bool enable_gui = (std::getenv("DISPLAY") != nullptr);
 
     //if (argc == 1)
     //    while (pub_imu.getNumSubscribers() == 0)
@@ -251,13 +253,15 @@ int main(int argc, char **argv)
             {
                 char name[] = "camera 1";
                 name[7] += k;
-                cv::imshow(name, simu_img[k]);
+                if (enable_gui)
+                    cv::imshow(name, simu_img[k]);
                 cv::Mat gray_image;
                 cv::cvtColor(simu_img[k], gray_image, CV_BGR2GRAY);
                 sensor_msgs::ImagePtr img_msg = cv_bridge::CvImage(feature.header, "mono8", gray_image).toImageMsg();
                 pub_image.publish(img_msg);
             }
-            cv::waitKey(1);
+            if (enable_gui)
+                cv::waitKey(1);
             if (generator.getTime() > 3 * DataGenerator::MAX_TIME)
                 break;
         }

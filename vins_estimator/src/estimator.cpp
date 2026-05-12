@@ -2,6 +2,12 @@
 
 Estimator::Estimator(): f_manager{Rs}
 {
+    // In ROS node this object is static and zero-initialized by runtime.
+    // In standalone mode it is stack-allocated, so pointers must be reset explicitly.
+    for (int i = 0; i < WINDOW_SIZE + 1; ++i)
+        pre_integrations[i] = nullptr;
+    tmp_pre_integration = nullptr;
+    last_marginalization_info = nullptr;
     ROS_INFO("init begins");
     clearState();
 }

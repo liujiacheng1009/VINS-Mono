@@ -40,6 +40,7 @@ extern double ROW, COL;
 
 
 void readParameters(ros::NodeHandle &n);
+void readParameters(const std::string &config_file);
 
 enum SIZE_PARAMETERIZATION
 {

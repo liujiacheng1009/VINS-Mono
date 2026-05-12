@@ -3,7 +3,9 @@
 #common parameters
 imu_topic: "/data_generator/imu"
 image_topic: "/data_generator/image"
-output_path: "/home/shaozu/output/"
+output_path: "/tmp/vins_mono_output/"
+image_height: 480
+image_width: 752
 
 # Extrinsic parameter between IMU and Camera.
 estimate_extrinsic: 0   # 0  Have an accurate extrinsic parameters. We will trust the following imu^R_cam, imu^T_cam, don't change it.

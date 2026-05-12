@@ -39,10 +39,8 @@ T readParam(ros::NodeHandle &n, std::string name)
     return ans;
 }
 
-void readParameters(ros::NodeHandle &n)
+static void readParametersFromConfig(const std::string &config_file)
 {
-    std::string config_file;
-    config_file = readParam<std::string>(n, "config_file");
     cv::FileStorage fsSettings(config_file, cv::FileStorage::READ);
     if(!fsSettings.isOpened())
     {
@@ -134,4 +132,15 @@ void readParameters(ros::NodeHandle &n)
     }
     
     fsSettings.release();
+}
+
+void readParameters(ros::NodeHandle &n)
+{
+    const std::string config_file = readParam<std::string>(n, "config_file");
+    readParametersFromConfig(config_file);
+}
+
+void readParameters(const std::string &config_file)
+{
+    readParametersFromConfig(config_file);
 }

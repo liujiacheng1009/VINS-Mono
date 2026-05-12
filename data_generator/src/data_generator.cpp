@@ -22,10 +22,10 @@ DataGenerator::DataGenerator()
         cout << "pts i " << i << " " << pts[i * 3 + 0] << " " << pts[i * 3 + 1] << " " << pts[i * 3 + 2] << endl;
     }
 
-    ap[0] = Vector3d(MAX_BOX, -MAX_BOX, MAX_BOX);
-    ap[1] = Vector3d(-MAX_BOX, MAX_BOX, MAX_BOX);
-    ap[2] = Vector3d(-MAX_BOX, -MAX_BOX, -MAX_BOX);
-    ap[3] = Vector3d(MAX_BOX, MAX_BOX, -MAX_BOX);
+    if (NUMBER_OF_AP > 0) ap[0] = Vector3d(MAX_BOX, -MAX_BOX, MAX_BOX);
+    if (NUMBER_OF_AP > 1) ap[1] = Vector3d(-MAX_BOX, MAX_BOX, MAX_BOX);
+    if (NUMBER_OF_AP > 2) ap[2] = Vector3d(-MAX_BOX, -MAX_BOX, -MAX_BOX);
+    if (NUMBER_OF_AP > 3) ap[3] = Vector3d(MAX_BOX, MAX_BOX, -MAX_BOX);
 
     Ric[0] << 0, 0, -1,
         -1, 0, 0,

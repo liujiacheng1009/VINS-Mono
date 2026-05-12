@@ -149,6 +149,79 @@ make build
 ```
 Note that the docker building process may take a while depends on your network and machine. After VINS-Mono successfully started, open another terminal and play your bag file, then you should be able to see the result. If you need modify the code, simply run `./run.sh LAUNCH_FILE_NAME` after your changes.
 
+### 6.1 Run simulation without ROS (native standalone)
+
+If your host machine does not have ROS, you can run the built-in simulation in standalone mode.
+This mode reuses VINS estimator core and `data_generator` directly, without `roslaunch`.
+
+Requirements:
+
+- CMake (>= 3.10)
+- Eigen3
+- OpenCV
+- Ceres Solver (1.x recommended)
+
+Install dependencies on Ubuntu (without ROS):
+
+```bash
+sudo apt update
+sudo apt install -y \
+  build-essential \
+  cmake \
+  git \
+  pkg-config \
+  libeigen3-dev \
+  libopencv-dev \
+  libgoogle-glog-dev \
+  libgflags-dev \
+  libsuitesparse-dev \
+  libatlas-base-dev
+```
+
+Install Ceres 1.14.0:
+
+```bash
+cd /tmp
+git clone https://ceres-solver.googlesource.com/ceres-solver
+cd ceres-solver
+git checkout 1.14.0
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+make -j$(nproc)
+sudo make install
+sudo ldconfig
+```
+
+Quick check:
+
+```bash
+cmake --version
+pkg-config --modversion opencv4 || pkg-config --modversion opencv
+dpkg -s libeigen3-dev | grep Version
+```
+
+Build and run:
+
+```bash
+cd ~/catkin_ws/src/VINS-Mono
+chmod +x standalone/run_standalone.sh
+./standalone/run_standalone.sh
+```
+
+Or run manually:
+
+```bash
+cd ~/catkin_ws/src/VINS-Mono
+cmake -S standalone -B build_standalone
+cmake --build build_standalone -j$(nproc)
+./build_standalone/vins_simulation_standalone ./config/simulation/simulation_config.yaml
+```
+
+Output:
+
+- terminal prints estimated position after initialization;
+- pose csv is written to `output_path` in config (`vins_result_no_loop.csv`).
+
 
 ## 7. Acknowledgements
 We use [ceres solver](http://ceres-solver.org/) for non-linear optimization and [DBoW2](https://github.com/dorian3d/DBoW2) for loop detection, and a generic [camera model](https://github.com/hengli/camodocal).

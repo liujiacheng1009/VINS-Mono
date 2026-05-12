@@ -20,10 +20,6 @@ add_executable(vins_simulation_standalone
     ../vins_estimator/src/factor/projection_td_factor.cpp
     ../vins_estimator/src/factor/marginalization_factor.cpp
     ../vins_estimator/src/utility/utility.cpp
-    ../vins_estimator/src/initial/solve_5pts.cpp
-    ../vins_estimator/src/initial/initial_aligment.cpp
-    ../vins_estimator/src/initial/initial_sfm.cpp
-    ../vins_estimator/src/initial/initial_ex_rotation.cpp
 )
 
 target_include_directories(vins_simulation_standalone PRIVATE

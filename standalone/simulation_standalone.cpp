@@ -57,6 +57,8 @@ int main(int argc, char **argv)
                 SimpleHeader header;
                 header.stamp = SimpleTime(t);
                 header.frame_id = "world";
+                estimator.initializeWithGroundTruth(
+                    t, gt_position, generator.getRotation(), generator.getVelocity(), acc, gyr);
 
                 std::unordered_map<int, Eigen::Vector2d> cur_uv;
                 std::map<int, std::vector<std::pair<int, Eigen::Matrix<double, 7, 1>>>> image;

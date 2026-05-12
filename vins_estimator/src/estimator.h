@@ -4,10 +4,6 @@
 #include "feature_manager.h"
 #include "utility/utility.h"
 #include "utility/tic_toc.h"
-#include "initial/solve_5pts.h"
-#include "initial/initial_sfm.h"
-#include "initial/initial_alignment.h"
-#include "initial/initial_ex_rotation.h"
 #include "utility/simple_types.h"
 #include "utility/logging.h"
 
@@ -34,12 +30,11 @@ class Estimator
     void processIMU(double t, const Vector3d &linear_acceleration, const Vector3d &angular_velocity);
     void processImage(const map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> &image, const SimpleHeader &header);
     void setReloFrame(double _frame_stamp, int _frame_index, vector<Vector3d> &_match_points, Vector3d _relo_t, Matrix3d _relo_r);
+    void initializeWithGroundTruth(double t, const Vector3d &P, const Matrix3d &R, const Vector3d &V,
+                                   const Vector3d &acc, const Vector3d &gyr);
 
     // internal
     void clearState();
-    bool initialStructure();
-    bool visualInitialAlign();
-    bool relativePose(Matrix3d &relative_R, Vector3d &relative_T, int &l);
     void slideWindow();
     void solveOdometry();
     void slideWindowNew();
@@ -93,9 +88,6 @@ class Estimator
     int sum_of_outlier, sum_of_back, sum_of_front, sum_of_invalid;
 
     FeatureManager f_manager;
-    MotionEstimator m_estimator;
-    InitialEXRotation initial_ex_rotation;
-
     bool first_imu;
     bool is_valid, is_key;
     bool failure_occur;
@@ -119,7 +111,6 @@ class Estimator
     MarginalizationInfo *last_marginalization_info;
     vector<double *> last_marginalization_parameter_blocks;
 
-    map<double, ImageFrame> all_image_frame;
     IntegrationBase *tmp_pre_integration;
 
     //relocalization variable

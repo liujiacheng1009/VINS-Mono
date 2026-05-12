@@ -54,8 +54,8 @@ int main(int argc, char **argv)
             }
             else
             {
-                std_msgs::Header header;
-                header.stamp = ros::Time(t);
+                SimpleHeader header;
+                header.stamp = SimpleTime(t);
                 header.frame_id = "world";
 
                 std::unordered_map<int, Eigen::Vector2d> cur_uv;

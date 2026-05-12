@@ -1,7 +1,6 @@
 #pragma once
 
-#include <ros/ros.h>
-#include <ros/console.h>
+#include "../utility/logging.h"
 #include <cstdlib>
 #include <pthread.h>
 #include <ceres/ceres.h>

@@ -23,22 +23,6 @@ std::string IMU_TOPIC;
 double ROW, COL;
 double TD, TR;
 
-template <typename T>
-T readParam(ros::NodeHandle &n, std::string name)
-{
-    T ans;
-    if (n.getParam(name, ans))
-    {
-        ROS_INFO_STREAM("Loaded " << name << ": " << ans);
-    }
-    else
-    {
-        ROS_ERROR_STREAM("Failed to load " << name);
-        n.shutdown();
-    }
-    return ans;
-}
-
 static void readParametersFromConfig(const std::string &config_file)
 {
     cv::FileStorage fsSettings(config_file, cv::FileStorage::READ);
@@ -132,12 +116,6 @@ static void readParametersFromConfig(const std::string &config_file)
     }
     
     fsSettings.release();
-}
-
-void readParameters(ros::NodeHandle &n)
-{
-    const std::string config_file = readParam<std::string>(n, "config_file");
-    readParametersFromConfig(config_file);
 }
 
 void readParameters(const std::string &config_file)

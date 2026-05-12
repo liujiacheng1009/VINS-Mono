@@ -27,7 +27,6 @@ add_executable(vins_simulation_standalone
 )
 
 target_include_directories(vins_simulation_standalone PRIVATE
-    ros_compat
     ../vins_estimator/src
     ../data_generator/src
     ${EIGEN3_INCLUDE_DIRS}

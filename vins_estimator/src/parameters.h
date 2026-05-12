@@ -1,9 +1,9 @@
 #pragma once
 
-#include <ros/ros.h>
 #include <vector>
 #include <eigen3/Eigen/Dense>
 #include "utility/utility.h"
+#include "utility/logging.h"
 #include <opencv2/opencv.hpp>
 #include <opencv2/core/eigen.hpp>
 #include <fstream>
@@ -39,7 +39,6 @@ extern int ROLLING_SHUTTER;
 extern double ROW, COL;
 
 
-void readParameters(ros::NodeHandle &n);
 void readParameters(const std::string &config_file);
 
 enum SIZE_PARAMETERIZATION

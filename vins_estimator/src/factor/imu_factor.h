@@ -1,5 +1,5 @@
 #pragma once
-#include <ros/assert.h>
+#include "../utility/logging.h"
 #include <iostream>
 #include <eigen3/Eigen/Dense>
 

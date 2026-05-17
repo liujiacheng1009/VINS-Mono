@@ -26,6 +26,7 @@ int main(int argc, char **argv)
     double prev_image_time = -1.0;
     std::vector<double> abs_pos_errors_raw;
     std::vector<double> abs_pos_errors_aligned;
+    std::vector<double> abs_vel_errors;
     bool has_align_offset = false;
     Eigen::Vector3d align_offset = Eigen::Vector3d::Zero();
 
@@ -102,6 +103,11 @@ int main(int argc, char **argv)
                     }
                     const double aligned_err = ((p + align_offset) - gt_position).norm();
                     abs_pos_errors_aligned.push_back(aligned_err);
+
+                    const Eigen::Vector3d gt_vel_world = generator.getRotation() * generator.getVelocity();
+                    const auto &v = estimator.Vs[WINDOW_SIZE];
+                    abs_vel_errors.push_back((v - gt_vel_world).norm());
+
                     std::cout << "t=" << t << " p=(" << p.x() << ", " << p.y() << ", " << p.z() << ")\n";
                 }
             }
@@ -138,6 +144,7 @@ int main(int argc, char **argv)
     {
         print_metrics(abs_pos_errors_raw, "raw");
         print_metrics(abs_pos_errors_aligned, "aligned");
+        print_metrics(abs_vel_errors, "vel");
     }
     else
     {

@@ -77,7 +77,7 @@ class Estimator
     Vector3d back_P0, last_P, last_P0;
     SimpleHeader Headers[(WINDOW_SIZE + 1)];
 
-    IntegrationBase *pre_integrations[(WINDOW_SIZE + 1)];
+    std::shared_ptr<IntegrationBase> pre_integrations[(WINDOW_SIZE + 1)];
     Vector3d acc_0, gyr_0;
 
     vector<double> dt_buf[(WINDOW_SIZE + 1)];
@@ -111,7 +111,7 @@ class Estimator
     MarginalizationInfo *last_marginalization_info;
     vector<double *> last_marginalization_parameter_blocks;
 
-    IntegrationBase *tmp_pre_integration;
+    std::shared_ptr<IntegrationBase> tmp_pre_integration;
 
     //relocalization variable
     bool relocalization_info;

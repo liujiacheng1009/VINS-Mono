@@ -2,11 +2,8 @@
 
 Estimator::Estimator(): f_manager{Rs}
 {
-    // In ROS node this object is static and zero-initialized by runtime.
-    // In standalone mode it is stack-allocated, so pointers must be reset explicitly.
-    for (int i = 0; i < WINDOW_SIZE + 1; ++i)
-        pre_integrations[i] = nullptr;
-    tmp_pre_integration = nullptr;
+    // shared_ptr members default-construct to empty; only the raw pointer
+    // (last_marginalization_info) still needs explicit nulling here.
     last_marginalization_info = nullptr;
     ROS_INFO("init begins");
     clearState();
@@ -36,8 +33,8 @@ void Estimator::initializeWithGroundTruth(double t, const Vector3d &P, const Mat
     Bgs[idx].setZero();
     Headers[idx].stamp = SimpleTime(t);
     Headers[idx].frame_id = "world";
-    if (pre_integrations[idx] == nullptr)
-        pre_integrations[idx] = new IntegrationBase(acc, gyr, Bas[idx], Bgs[idx]);
+    if (!pre_integrations[idx])
+        pre_integrations[idx] = std::make_shared<IntegrationBase>(acc, gyr, Bas[idx], Bgs[idx]);
     acc_0 = acc;
     gyr_0 = gyr;
     first_imu = true;
@@ -56,9 +53,7 @@ void Estimator::clearState()
         linear_acceleration_buf[i].clear();
         angular_velocity_buf[i].clear();
 
-        if (pre_integrations[i] != nullptr)
-            delete pre_integrations[i];
-        pre_integrations[i] = nullptr;
+        pre_integrations[i].reset();
     }
 
     for (int i = 0; i < NUM_OF_CAM; i++)
@@ -78,12 +73,10 @@ void Estimator::clearState()
     td = TD;
 
 
-    if (tmp_pre_integration != nullptr)
-        delete tmp_pre_integration;
+    tmp_pre_integration.reset();
+
     if (last_marginalization_info != nullptr)
         delete last_marginalization_info;
-
-    tmp_pre_integration = nullptr;
     last_marginalization_info = nullptr;
     last_marginalization_parameter_blocks.clear();
 
@@ -107,7 +100,7 @@ void Estimator::processIMU(double dt, const Vector3d &linear_acceleration, const
 
     if (!pre_integrations[frame_count])
     {
-        pre_integrations[frame_count] = new IntegrationBase{acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]};
+        pre_integrations[frame_count] = std::make_shared<IntegrationBase>(acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]);
     }
     if (frame_count != 0)
     {
@@ -147,7 +140,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
     ROS_DEBUG("number of feature: %d", f_manager.getFeatureCount());
     Headers[frame_count] = header;
 
-    tmp_pre_integration = new IntegrationBase{acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]};
+    tmp_pre_integration = std::make_shared<IntegrationBase>(acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]);
 
     if (solver_flag == INITIAL)
     {
@@ -763,8 +756,7 @@ void Estimator::slideWindow()
             Bas[WINDOW_SIZE] = Bas[WINDOW_SIZE - 1];
             Bgs[WINDOW_SIZE] = Bgs[WINDOW_SIZE - 1];
 
-            delete pre_integrations[WINDOW_SIZE];
-            pre_integrations[WINDOW_SIZE] = new IntegrationBase{acc_0, gyr_0, Bas[WINDOW_SIZE], Bgs[WINDOW_SIZE]};
+            pre_integrations[WINDOW_SIZE] = std::make_shared<IntegrationBase>(acc_0, gyr_0, Bas[WINDOW_SIZE], Bgs[WINDOW_SIZE]);
 
             dt_buf[WINDOW_SIZE].clear();
             linear_acceleration_buf[WINDOW_SIZE].clear();
@@ -797,8 +789,7 @@ void Estimator::slideWindow()
             Bas[frame_count - 1] = Bas[frame_count];
             Bgs[frame_count - 1] = Bgs[frame_count];
 
-            delete pre_integrations[WINDOW_SIZE];
-            pre_integrations[WINDOW_SIZE] = new IntegrationBase{acc_0, gyr_0, Bas[WINDOW_SIZE], Bgs[WINDOW_SIZE]};
+            pre_integrations[WINDOW_SIZE] = std::make_shared<IntegrationBase>(acc_0, gyr_0, Bas[WINDOW_SIZE], Bgs[WINDOW_SIZE]);
 
             dt_buf[WINDOW_SIZE].clear();
             linear_acceleration_buf[WINDOW_SIZE].clear();

@@ -37,7 +37,7 @@ SpeedBiasState parseSpeedBias(const double *parameters)
 
 }  // namespace
 
-IntegrationBase::IntegrationBase(const Eigen::Vector3d &_acc_0, const Eigen::Vector3d &_gyr_0,
+Integrator::Integrator(const Eigen::Vector3d &_acc_0, const Eigen::Vector3d &_gyr_0,
                                  const Eigen::Vector3d &_linearized_ba, const Eigen::Vector3d &_linearized_bg)
     : acc_0{_acc_0}, gyr_0{_gyr_0}, linearized_acc{_acc_0}, linearized_gyr{_gyr_0},
       linearized_ba{_linearized_ba}, linearized_bg{_linearized_bg},
@@ -55,7 +55,7 @@ IntegrationBase::IntegrationBase(const Eigen::Vector3d &_acc_0, const Eigen::Vec
     noise.block<3, 3>(15, 15) = (GYR_W * GYR_W) * Eigen::Matrix3d::Identity();
 }
 
-void IntegrationBase::push_back(double dt, const Eigen::Vector3d &acc, const Eigen::Vector3d &gyr)
+void Integrator::push_back(double dt, const Eigen::Vector3d &acc, const Eigen::Vector3d &gyr)
 {
     dt_buf.push_back(dt);
     acc_buf.push_back(acc);
@@ -63,7 +63,7 @@ void IntegrationBase::push_back(double dt, const Eigen::Vector3d &acc, const Eig
     propagate(dt, acc, gyr);
 }
 
-void IntegrationBase::repropagate(const Eigen::Vector3d &_linearized_ba, const Eigen::Vector3d &_linearized_bg)
+void Integrator::repropagate(const Eigen::Vector3d &_linearized_ba, const Eigen::Vector3d &_linearized_bg)
 {
     sum_dt = 0.0;
     acc_0 = linearized_acc;
@@ -79,7 +79,7 @@ void IntegrationBase::repropagate(const Eigen::Vector3d &_linearized_ba, const E
         propagate(dt_buf[i], acc_buf[i], gyr_buf[i]);
 }
 
-void IntegrationBase::midPointIntegration(double _dt,
+void Integrator::midPointIntegration(double _dt,
                                           const Eigen::Vector3d &_acc_0, const Eigen::Vector3d &_gyr_0,
                                           const Eigen::Vector3d &_acc_1, const Eigen::Vector3d &_gyr_1,
                                           const Eigen::Vector3d &delta_p, const Eigen::Quaterniond &delta_q,
@@ -158,7 +158,7 @@ void IntegrationBase::midPointIntegration(double _dt,
     }
 }
 
-void IntegrationBase::propagate(double _dt, const Eigen::Vector3d &_acc_1, const Eigen::Vector3d &_gyr_1)
+void Integrator::propagate(double _dt, const Eigen::Vector3d &_acc_1, const Eigen::Vector3d &_gyr_1)
 {
     dt = _dt;
     acc_1 = _acc_1;
@@ -185,7 +185,7 @@ void IntegrationBase::propagate(double _dt, const Eigen::Vector3d &_acc_1, const
     gyr_0 = gyr_1;
 }
 
-Eigen::Matrix<double, 15, 1> IntegrationBase::computeResidual(
+Eigen::Matrix<double, 15, 1> Integrator::computeResidual(
     const Eigen::Vector3d &Pi, const Eigen::Quaterniond &Qi, const Eigen::Vector3d &Vi,
     const Eigen::Vector3d &Bai, const Eigen::Vector3d &Bgi,
     const Eigen::Vector3d &Pj, const Eigen::Quaterniond &Qj, const Eigen::Vector3d &Vj,

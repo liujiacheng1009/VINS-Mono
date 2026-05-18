@@ -9,11 +9,11 @@
 #include "../utility/utility.h"
 #include "../parameters.h"
 
-class IntegrationBase
+class Integrator
 {
   public:
-    IntegrationBase() = delete;
-    IntegrationBase(const Eigen::Vector3d &_acc_0, const Eigen::Vector3d &_gyr_0,
+    Integrator() = delete;
+    Integrator(const Eigen::Vector3d &_acc_0, const Eigen::Vector3d &_gyr_0,
                     const Eigen::Vector3d &_linearized_ba, const Eigen::Vector3d &_linearized_bg);
 
     void push_back(double dt, const Eigen::Vector3d &acc, const Eigen::Vector3d &gyr);
@@ -63,7 +63,7 @@ class IMUFactor : public ceres::SizedCostFunction<15, 7, 9, 7, 9>
 {
   public:
     IMUFactor() = delete;
-    explicit IMUFactor(std::shared_ptr<IntegrationBase> pre_integration)
+    explicit IMUFactor(std::shared_ptr<Integrator> pre_integration)
         : pre_integration_(std::move(pre_integration))
     {
     }
@@ -72,7 +72,7 @@ class IMUFactor : public ceres::SizedCostFunction<15, 7, 9, 7, 9>
                   double *residuals,
                   double **jacobians) const override;
 
-    std::shared_ptr<IntegrationBase> pre_integration_;
+    std::shared_ptr<Integrator> pre_integration_;
 
   private:
     static constexpr double kJacobianNumericalLimit = 1e8;

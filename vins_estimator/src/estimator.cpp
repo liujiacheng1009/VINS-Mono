@@ -34,7 +34,7 @@ void Estimator::initializeWithGroundTruth(double t, const Vector3d &P, const Mat
     Headers[idx].stamp = SimpleTime(t);
     Headers[idx].frame_id = "world";
     if (!pre_integrations[idx])
-        pre_integrations[idx] = std::make_shared<IntegrationBase>(acc, gyr, Bas[idx], Bgs[idx]);
+        pre_integrations[idx] = std::make_shared<Integrator>(acc, gyr, Bas[idx], Bgs[idx]);
     acc_0 = acc;
     gyr_0 = gyr;
     first_imu = true;
@@ -100,7 +100,7 @@ void Estimator::processIMU(double dt, const Vector3d &linear_acceleration, const
 
     if (!pre_integrations[frame_count])
     {
-        pre_integrations[frame_count] = std::make_shared<IntegrationBase>(acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]);
+        pre_integrations[frame_count] = std::make_shared<Integrator>(acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]);
     }
     if (frame_count != 0)
     {
@@ -140,7 +140,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
     ROS_DEBUG("number of feature: %d", f_manager.getFeatureCount());
     Headers[frame_count] = header;
 
-    tmp_pre_integration = std::make_shared<IntegrationBase>(acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]);
+    tmp_pre_integration = std::make_shared<Integrator>(acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]);
 
     if (solver_flag == INITIAL)
     {
@@ -756,7 +756,7 @@ void Estimator::slideWindow()
             Bas[WINDOW_SIZE] = Bas[WINDOW_SIZE - 1];
             Bgs[WINDOW_SIZE] = Bgs[WINDOW_SIZE - 1];
 
-            pre_integrations[WINDOW_SIZE] = std::make_shared<IntegrationBase>(acc_0, gyr_0, Bas[WINDOW_SIZE], Bgs[WINDOW_SIZE]);
+            pre_integrations[WINDOW_SIZE] = std::make_shared<Integrator>(acc_0, gyr_0, Bas[WINDOW_SIZE], Bgs[WINDOW_SIZE]);
 
             dt_buf[WINDOW_SIZE].clear();
             linear_acceleration_buf[WINDOW_SIZE].clear();
@@ -789,7 +789,7 @@ void Estimator::slideWindow()
             Bas[frame_count - 1] = Bas[frame_count];
             Bgs[frame_count - 1] = Bgs[frame_count];
 
-            pre_integrations[WINDOW_SIZE] = std::make_shared<IntegrationBase>(acc_0, gyr_0, Bas[WINDOW_SIZE], Bgs[WINDOW_SIZE]);
+            pre_integrations[WINDOW_SIZE] = std::make_shared<Integrator>(acc_0, gyr_0, Bas[WINDOW_SIZE], Bgs[WINDOW_SIZE]);
 
             dt_buf[WINDOW_SIZE].clear();
             linear_acceleration_buf[WINDOW_SIZE].clear();

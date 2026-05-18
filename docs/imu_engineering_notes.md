@@ -42,16 +42,16 @@
 历史上 factor 内部保存的是：
 
 ```cpp
-IntegrationBase* pre_integration_;
+Integrator* pre_integration_;
 ```
 
 从类型上看不出 `IMUFactor` 是否拥有该对象。
 当前实现中 `Estimator` 也已经把 `pre_integrations[(WINDOW_SIZE + 1)]` 和
-`tmp_pre_integration` 改成 `std::shared_ptr<IntegrationBase>`，
+`tmp_pre_integration` 改成 `std::shared_ptr<Integrator>`，
 `IMUFactor` 与 `Estimator` 共享所有权：
 
 ```cpp
-std::shared_ptr<IntegrationBase> pre_integration_;
+std::shared_ptr<Integrator> pre_integration_;
 ```
 
 这样即使 `Estimator::slideWindow` 把对应槽位 `reset()`，
@@ -61,7 +61,7 @@ std::shared_ptr<IntegrationBase> pre_integration_;
 #### 使用 `explicit` 和 `override`
 
 ```cpp
-explicit IMUFactor(const IntegrationBase* pre_integration);
+explicit IMUFactor(const Integrator* pre_integration);
 
 bool Evaluate(double const* const* parameters,
               double* residuals,
@@ -108,11 +108,11 @@ pre_integration_->covariance.inverse()
 
 ---
 
-## 二、`IntegrationBase`
+## 二、`Integrator`
 
 ### 当前结构
 
-`IntegrationBase` 是 IMU 预积分核心类，负责：
+`Integrator` 是 IMU 预积分核心类，负责：
 
 - 在 `push_back()` / `propagate()` 中按 IMU 序列做中值积分。
 - 在 `midPointIntegration()` 中同时更新预积分量和 15x15 雅可比、协方差。
@@ -234,7 +234,7 @@ Eigen::Matrix<double, 15, 18> step_V;
 #include <ceres/ceres.h>
 ```
 
-`IntegrationBase` 本身不使用 Ceres，可以去掉这个 include，由 `IMUFactor` 自己引入即可。
+`Integrator` 本身不使用 Ceres，可以去掉这个 include，由 `IMUFactor` 自己引入即可。
 
 #### 加 `evaluate()` 的 `const` 限定
 
@@ -248,7 +248,7 @@ Eigen::Matrix<double, 15, 1> evaluate(...);
 Eigen::Matrix<double, 15, 1> evaluate(...) const;
 ```
 
-这样在 `IMUFactor` 持有 `const IntegrationBase*` 时也能正常调用。
+这样在 `IMUFactor` 持有 `const Integrator*` 时也能正常调用。
 
 #### 校验 `dt > 0`
 
@@ -281,13 +281,13 @@ result_delta_q = delta_q * Quaterniond(1, un_gyr(0) * _dt / 2, ...);
 1. 增加参数块说明注释或具名解析 helper。（已完成）
 2. 重命名 `pre_integration_`，必要时改为 `const`。（已完成，命名）
 3. 给构造函数和 `Evaluate()` 增加 `explicit` / `override`。（已完成）
-4. 将 `Evaluate()` 实现移动到 `imu_factor.cpp`。（已完成；`IntegrationBase` 也合并进 `imu_factor.h/.cpp`，移除 `integration_base.h`）
+4. 将 `Evaluate()` 实现移动到 `imu_factor.cpp`。（已完成；`Integrator` 也合并进 `imu_factor.h/.cpp`，移除 `integration_base.h`）
 5. 将硬编码数值阈值改成具名常量。（已完成）
 6. 清理 `#if 0` 和注释掉的死代码。（已完成）
 7. 检查 `sqrt_info` 计算方式，并增加分解状态检查。
 8. 增加雅可比验证测试或 debug 工具。
 
-`IntegrationBase`：
+`Integrator`：
 
 1. 移除头文件作用域的 `using namespace Eigen;`。（已完成）
 2. 删除已废弃的 `step_jacobian` / `step_V` 成员和文件尾部死代码。（已完成）

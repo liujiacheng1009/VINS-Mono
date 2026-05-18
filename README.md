@@ -217,6 +217,12 @@ cmake --build build_standalone -j$(nproc)
 ./build_standalone/vins_simulation_standalone ./config/simulation/simulation_config.yaml
 ```
 
+Build standalone in one command:
+
+```bash
+cmake -S standalone -B build_standalone && cmake --build build_standalone -j2
+```
+
 Output:
 
 - terminal prints estimated position after initialization;

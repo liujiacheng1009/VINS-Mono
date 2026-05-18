@@ -2,12 +2,14 @@ cmake_minimum_required(VERSION 3.10)
 project(vins_mono_standalone)
 
 set(CMAKE_BUILD_TYPE Release)
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(Eigen3 REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(Ceres REQUIRED)
+
+add_subdirectory(../third_party/log_value ${CMAKE_BINARY_DIR}/third_party/log_value)
 
 add_executable(vins_simulation_standalone
     simulation_standalone.cpp
@@ -33,5 +35,6 @@ target_include_directories(vins_simulation_standalone PRIVATE
 target_link_libraries(vins_simulation_standalone
     ${OpenCV_LIBS}
     ${CERES_LIBRARIES}
+    log_value::log_value
     pthread
 )

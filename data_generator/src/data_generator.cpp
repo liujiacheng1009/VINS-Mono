@@ -201,6 +201,24 @@ Vector3d DataGenerator::getLinearAcceleration()
 
 }
 
+Vector3d DataGenerator::getAccelerometerBias()
+{
+#if BIAS_ACC
+    return Vector3d(0.01, 0.02, 0.03);
+#else
+    return Vector3d::Zero();
+#endif
+}
+
+Vector3d DataGenerator::getGyroscopeBias()
+{
+#if BIAS_GYR
+    return Vector3d(0.02, 0.03, 0.04);
+#else
+    return Vector3d::Zero();
+#endif
+}
+
 vector<pair<int, Vector3d>> DataGenerator::getImage()
 {
     vector<pair<int, Vector3d>> image;

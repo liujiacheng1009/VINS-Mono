@@ -29,6 +29,8 @@ class DataGenerator
 
     Vector3d getAngularVelocity();
     Vector3d getLinearAcceleration();
+    Vector3d getAccelerometerBias();
+    Vector3d getGyroscopeBias();
 
     vector<pair<int, Vector3d>> getImage();
 

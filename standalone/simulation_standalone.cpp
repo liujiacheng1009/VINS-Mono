@@ -6,6 +6,8 @@
 #include "../data_generator/src/data_generator.h"
 #include "../vins_estimator/src/estimator.h"
 #include "../vins_estimator/src/parameters.h"
+#include "../vins_estimator/src/utility/utility.h"
+#include <log_value/log_macros.h>
 
 int main(int argc, char **argv)
 {
@@ -13,6 +15,12 @@ int main(int argc, char **argv)
         (argc > 1) ? argv[1] : std::string("../config/simulation/simulation_config.yaml");
 
     readParameters(config_path);
+
+    logging::ValueLogger::Options log_opts;
+    log_opts.program_name = "vins_simulation_standalone";
+    log_opts.log_path = "log";
+    log_opts.also_log_to_stderr = true;
+    logging::ValueLogger::Init(log_opts);
 
     Estimator estimator;
     estimator.setParameter();
@@ -104,11 +112,27 @@ int main(int argc, char **argv)
                     const double aligned_err = ((p + align_offset) - gt_position).norm();
                     abs_pos_errors_aligned.push_back(aligned_err);
 
-                    const Eigen::Vector3d gt_vel_world = generator.getRotation() * generator.getVelocity();
+                    const Eigen::Matrix3d gt_rotation = generator.getRotation();
+                    const Eigen::Vector3d gt_vel_world = gt_rotation * generator.getVelocity();
                     const auto &v = estimator.Vs[WINDOW_SIZE];
                     abs_vel_errors.push_back((v - gt_vel_world).norm());
 
-                    std::cout << "t=" << t << " p=(" << p.x() << ", " << p.y() << ", " << p.z() << ")\n";
+                    const Eigen::Vector3d ypr = Utility::R2ypr(estimator.Rs[WINDOW_SIZE]);
+                    const Eigen::Vector3d gt_ypr = Utility::R2ypr(gt_rotation);
+                    const auto &ba = estimator.Bas[WINDOW_SIZE];
+                    const auto &bg = estimator.Bgs[WINDOW_SIZE];
+                    const Eigen::Vector3d gt_ba = generator.getAccelerometerBias();
+                    const Eigen::Vector3d gt_bg = generator.getGyroscopeBias();
+                    LOG_VALUE("p", p.x(), p.y(), p.z());
+                    LOG_VALUE("v", v.x(), v.y(), v.z());
+                    LOG_VALUE("ypr", ypr.x(), ypr.y(), ypr.z());
+                    LOG_VALUE("ba", ba.x(), ba.y(), ba.z());
+                    LOG_VALUE("bg", bg.x(), bg.y(), bg.z());
+                    LOG_VALUE("gt_p", gt_position.x(), gt_position.y(), gt_position.z());
+                    LOG_VALUE("gt_v", gt_vel_world.x(), gt_vel_world.y(), gt_vel_world.z());
+                    LOG_VALUE("gt_ypr", gt_ypr.x(), gt_ypr.y(), gt_ypr.z());
+                    LOG_VALUE("gt_ba", gt_ba.x(), gt_ba.y(), gt_ba.z());
+                    LOG_VALUE("gt_bg", gt_bg.x(), gt_bg.y(), gt_bg.z());
                 }
             }
         }
@@ -150,5 +174,6 @@ int main(int argc, char **argv)
     {
         std::cout << "[metrics] no NON_LINEAR samples, metrics unavailable.\n";
     }
+    logging::ValueLogger::Shutdown();
     return 0;
 }

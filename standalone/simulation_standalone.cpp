@@ -35,8 +35,9 @@ int main(int argc, char **argv)
     std::vector<double> abs_pos_errors_raw;
     std::vector<double> abs_pos_errors_aligned;
     std::vector<double> abs_vel_errors;
-    bool has_align_offset = false;
-    Eigen::Vector3d align_offset = Eigen::Vector3d::Zero();
+    bool has_align_transform = false;
+    Eigen::Matrix3d align_rotation = Eigen::Matrix3d::Identity();
+    Eigen::Vector3d align_translation = Eigen::Vector3d::Zero();
 
     while (generator.getTime() <= 3.0 * DataGenerator::MAX_TIME)
     {
@@ -101,18 +102,20 @@ int main(int argc, char **argv)
                 if (estimator.solver_flag == Estimator::SolverFlag::NON_LINEAR)
                 {
                     const auto &p = estimator.Ps[WINDOW_SIZE];
+                    const Eigen::Matrix3d gt_rotation = generator.getRotation();
                     const double raw_err = (p - gt_position).norm();
                     abs_pos_errors_raw.push_back(raw_err);
 
-                    if (!has_align_offset)
+                    if (!has_align_transform)
                     {
-                        align_offset = gt_position - p;
-                        has_align_offset = true;
+                        align_rotation = gt_rotation * estimator.Rs[WINDOW_SIZE].transpose();
+                        align_translation = gt_position - align_rotation * p;
+                        has_align_transform = true;
                     }
-                    const double aligned_err = ((p + align_offset) - gt_position).norm();
+                    const Eigen::Vector3d aligned_position = align_rotation * p + align_translation;
+                    const double aligned_err = (aligned_position - gt_position).norm();
                     abs_pos_errors_aligned.push_back(aligned_err);
 
-                    const Eigen::Matrix3d gt_rotation = generator.getRotation();
                     const Eigen::Vector3d gt_vel_world = gt_rotation * generator.getVelocity();
                     const auto &v = estimator.Vs[WINDOW_SIZE];
                     abs_vel_errors.push_back((v - gt_vel_world).norm());

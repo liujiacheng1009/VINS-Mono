@@ -228,6 +228,14 @@ Output:
 - terminal prints estimated position after initialization;
 - pose csv is written to `output_path` in config (`vins_result_no_loop.csv`).
 
+Example metrics:
+
+```text
+[metrics][raw] samples=1190 mae=0.0753468 rmse=0.0783796 max=0.108481 final=0.10823
+[metrics][aligned] samples=1190 mae=0.0752922 rmse=0.0779409 max=0.102095 final=0.101585
+[metrics][vel] samples=1190 mae=0.00444844 rmse=0.00560858 max=0.0189432 final=0.00271646
+```
+
 
 ## 7. Acknowledgements
 We use [ceres solver](http://ceres-solver.org/) for non-linear optimization and [DBoW2](https://github.com/dorian3d/DBoW2) for loop detection, and a generic [camera model](https://github.com/hengli/camodocal).

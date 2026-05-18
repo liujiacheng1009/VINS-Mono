@@ -114,7 +114,7 @@ pre_integration_->covariance.inverse()
 
 `Integrator` 是 IMU 预积分核心类，负责：
 
-- 在 `push_back()` / `propagate()` 中按 IMU 序列做中值积分。
+- 在 `process()` / `propagate()` 中按 IMU 序列做中值积分。
 - 在 `midPointIntegration()` 中同时更新预积分量和 15x15 雅可比、协方差。
 - 在 `evaluate()` 中根据当前 bias 计算 IMU 残差。
 - 在 `repropagate()` 中以新的线性化 bias 重新积分整段。
@@ -252,7 +252,7 @@ Eigen::Matrix<double, 15, 1> evaluate(...) const;
 
 #### 校验 `dt > 0`
 
-`push_back()` / `propagate()` 接受任意 `dt`，但 `dt <= 0` 时雅可比、协方差累积会异常。建议在入口加断言或显式保护。
+`process()` / `propagate()` 接受任意 `dt`，但 `dt <= 0` 时雅可比、协方差累积会异常。建议在入口加断言或显式保护。
 
 #### 重新传播抽成 helper
 
@@ -285,7 +285,7 @@ result_delta_q = delta_q * Quaterniond(1, un_gyr(0) * _dt / 2, ...);
 5. 将硬编码数值阈值改成具名常量。（已完成）
 6. 清理 `#if 0` 和注释掉的死代码。（已完成）
 7. 检查 `sqrt_info` 计算方式，并增加分解状态检查。
-8. 增加雅可比验证测试或 debug 工具。
+8. 增加雅可比验证测试或 debug 工具。（已完成，见 `tests/imu_factor_test.cpp`）
 
 `Integrator`：
 
@@ -296,6 +296,6 @@ result_delta_q = delta_q * Quaterniond(1, un_gyr(0) * _dt / 2, ...);
 5. 在 propagate 末尾对协方差做对称化处理。
 6. 拆分内部状态结构体，精简 `midPointIntegration` 签名。
 7. 收敛成员可见性，提供必要的 `const` getter。
-8. 增加预积分单元测试，覆盖正向传播和 `repropagate` 一致性。
+8. 增加预积分单元测试，覆盖正向传播和 `repropagate` 一致性。（已完成，见 `tests/imu_factor_test.cpp`）
 
 整体顺序优先提升可读性和数值稳健性，再涉及接口/可见性这类影响面更广的改动。

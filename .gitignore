@@ -11,3 +11,4 @@ test.launch
 .vscode/
 **/build_standalone/
 log/
+build_tests/

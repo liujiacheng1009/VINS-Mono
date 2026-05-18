@@ -236,11 +236,35 @@ Example metrics:
 [metrics][vel] samples=1190 mae=0.00444844 rmse=0.00560858 max=0.0189432 final=0.00271646
 ```
 
+## 7. Unit tests
 
-## 7. Acknowledgements
+Unit tests for `vins_estimator/src/factor/imu_factor.{h,cpp}` live in `tests/`
+and are driven by GoogleTest (`sudo apt install libgtest-dev`). Build and run:
+
+```bash
+cmake -S tests -B build_tests
+cmake --build build_tests -j2
+ctest --test-dir build_tests --output-on-failure
+```
+
+The suite covers:
+
+- `Integrator` construction, propagation against analytic closed-forms for
+  constant body acceleration and constant body angular velocity.
+- `repropagate()` reproducibility against a freshly propagated reference
+  (state, jacobian and covariance).
+- `Integrator::computeResidual` zero-output for a perfectly consistent state
+  pair, plus first-order behaviour under a small position perturbation.
+- `IMUFactor::Evaluate` residual at a consistent pair, `nullptr` jacobians
+  handling, and analytical jacobians of all four parameter blocks against
+  finite differences in the minimal tangent space.
+- `shared_ptr` ownership between `IMUFactor` and `Integrator` (factor pins
+  the integrator alive after the estimator drops its slot).
+
+## 8. Acknowledgements
 We use [ceres solver](http://ceres-solver.org/) for non-linear optimization and [DBoW2](https://github.com/dorian3d/DBoW2) for loop detection, and a generic [camera model](https://github.com/hengli/camodocal).
 
-## 8. Licence
+## 9. Licence
 The source code is released under [GPLv3](http://www.gnu.org/licenses/) license.
 
 We are still working on improving the code reliability. For any technical issues, please contact Tong QIN <tong.qinATconnect.ust.hk> or Peiliang LI <pliapATconnect.ust.hk>.

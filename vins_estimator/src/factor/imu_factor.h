@@ -16,7 +16,7 @@ class Integrator
     Integrator(const Eigen::Vector3d &_acc_0, const Eigen::Vector3d &_gyr_0,
                     const Eigen::Vector3d &_linearized_ba, const Eigen::Vector3d &_linearized_bg);
 
-    void push_back(double dt, const Eigen::Vector3d &acc, const Eigen::Vector3d &gyr);
+    void process(double dt, const Eigen::Vector3d &acc, const Eigen::Vector3d &gyr);
 
     void repropagate(const Eigen::Vector3d &_linearized_ba, const Eigen::Vector3d &_linearized_bg);
 

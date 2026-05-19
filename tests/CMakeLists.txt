@@ -38,3 +38,27 @@ target_link_libraries(imu_factor_test PRIVATE
 )
 
 gtest_discover_tests(imu_factor_test)
+
+add_executable(projection_factor_test
+    projection_factor_test.cpp
+    ${VINS_SRC_DIR}/factor/projection_factor.cpp
+    ${VINS_SRC_DIR}/parameters.cpp
+    ${VINS_SRC_DIR}/utility/utility.cpp
+)
+
+target_include_directories(projection_factor_test PRIVATE
+    ${VINS_SRC_DIR}
+    ${EIGEN3_INCLUDE_DIRS}
+    ${CERES_INCLUDE_DIRS}
+    ${OpenCV_INCLUDE_DIRS}
+)
+
+target_link_libraries(projection_factor_test PRIVATE
+    GTest::gtest
+    GTest::gtest_main
+    ${CERES_LIBRARIES}
+    ${OpenCV_LIBS}
+    pthread
+)
+
+gtest_discover_tests(projection_factor_test)

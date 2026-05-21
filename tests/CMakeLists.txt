@@ -62,3 +62,26 @@ target_link_libraries(projection_factor_test PRIVATE
 )
 
 gtest_discover_tests(projection_factor_test)
+
+add_executable(marginalization_factor_test
+    marginalization_factor_test.cpp
+    ${VINS_SRC_DIR}/factor/marginalization_factor.cpp
+    ${VINS_SRC_DIR}/utility/utility.cpp
+)
+
+target_include_directories(marginalization_factor_test PRIVATE
+    ${VINS_SRC_DIR}
+    ${EIGEN3_INCLUDE_DIRS}
+    ${CERES_INCLUDE_DIRS}
+    ${OpenCV_INCLUDE_DIRS}
+)
+
+target_link_libraries(marginalization_factor_test PRIVATE
+    GTest::gtest
+    GTest::gtest_main
+    ${CERES_LIBRARIES}
+    ${OpenCV_LIBS}
+    pthread
+)
+
+gtest_discover_tests(marginalization_factor_test)

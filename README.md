@@ -231,9 +231,9 @@ Output:
 Example metrics:
 
 ```text
-[metrics][raw] samples=1190 mae=0.075347 rmse=0.0783796 max=0.10848 final=0.108229
-[metrics][aligned] samples=1190 mae=0.0752923 rmse=0.077941 max=0.102095 final=0.101583
-[metrics][vel] samples=1190 mae=0.00444844 rmse=0.00560863 max=0.0189432 final=0.00271621
+[metrics][raw] samples=1190 mae=0.0753451 rmse=0.0783779 max=0.108481 final=0.10823
+[metrics][aligned] samples=1190 mae=0.0752905 rmse=0.0779393 max=0.102094 final=0.101585
+[metrics][vel] samples=1190 mae=0.00444835 rmse=0.00560853 max=0.0189432 final=0.00271687
 ```
 
 ## 7. Unit tests

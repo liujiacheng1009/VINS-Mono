@@ -622,17 +622,17 @@ void Estimator::optimization()
         marginalization_info->marginalize();
         ROS_DEBUG("marginalization %f ms", t_margin.toc());
 
-        std::unordered_map<long, double *> addr_shift;
+        std::unordered_map<ParameterBlockId, double *> addr_shift;
         for (int i = 1; i <= WINDOW_SIZE; i++)
         {
-            addr_shift[reinterpret_cast<long>(para_Pose[i])] = para_Pose[i - 1];
-            addr_shift[reinterpret_cast<long>(para_SpeedBias[i])] = para_SpeedBias[i - 1];
+            addr_shift[reinterpret_cast<ParameterBlockId>(para_Pose[i])] = para_Pose[i - 1];
+            addr_shift[reinterpret_cast<ParameterBlockId>(para_SpeedBias[i])] = para_SpeedBias[i - 1];
         }
         for (int i = 0; i < NUM_OF_CAM; i++)
-            addr_shift[reinterpret_cast<long>(para_Ex_Pose[i])] = para_Ex_Pose[i];
+            addr_shift[reinterpret_cast<ParameterBlockId>(para_Ex_Pose[i])] = para_Ex_Pose[i];
         if (ESTIMATE_TD)
         {
-            addr_shift[reinterpret_cast<long>(para_Td[0])] = para_Td[0];
+            addr_shift[reinterpret_cast<ParameterBlockId>(para_Td[0])] = para_Td[0];
         }
         vector<double *> parameter_blocks = marginalization_info->getParameterBlocks(addr_shift);
 
@@ -678,27 +678,27 @@ void Estimator::optimization()
             marginalization_info->marginalize();
             ROS_DEBUG("end marginalization, %f ms", t_margin.toc());
             
-            std::unordered_map<long, double *> addr_shift;
+            std::unordered_map<ParameterBlockId, double *> addr_shift;
             for (int i = 0; i <= WINDOW_SIZE; i++)
             {
                 if (i == WINDOW_SIZE - 1)
                     continue;
                 else if (i == WINDOW_SIZE)
                 {
-                    addr_shift[reinterpret_cast<long>(para_Pose[i])] = para_Pose[i - 1];
-                    addr_shift[reinterpret_cast<long>(para_SpeedBias[i])] = para_SpeedBias[i - 1];
+                    addr_shift[reinterpret_cast<ParameterBlockId>(para_Pose[i])] = para_Pose[i - 1];
+                    addr_shift[reinterpret_cast<ParameterBlockId>(para_SpeedBias[i])] = para_SpeedBias[i - 1];
                 }
                 else
                 {
-                    addr_shift[reinterpret_cast<long>(para_Pose[i])] = para_Pose[i];
-                    addr_shift[reinterpret_cast<long>(para_SpeedBias[i])] = para_SpeedBias[i];
+                    addr_shift[reinterpret_cast<ParameterBlockId>(para_Pose[i])] = para_Pose[i];
+                    addr_shift[reinterpret_cast<ParameterBlockId>(para_SpeedBias[i])] = para_SpeedBias[i];
                 }
             }
             for (int i = 0; i < NUM_OF_CAM; i++)
-                addr_shift[reinterpret_cast<long>(para_Ex_Pose[i])] = para_Ex_Pose[i];
+                addr_shift[reinterpret_cast<ParameterBlockId>(para_Ex_Pose[i])] = para_Ex_Pose[i];
             if (ESTIMATE_TD)
             {
-                addr_shift[reinterpret_cast<long>(para_Td[0])] = para_Td[0];
+                addr_shift[reinterpret_cast<ParameterBlockId>(para_Td[0])] = para_Td[0];
             }
             
             vector<double *> parameter_blocks = marginalization_info->getParameterBlocks(addr_shift);

@@ -42,6 +42,38 @@ Eigen::Matrix2d ProjectionFactor::sqrt_info;
 ProjectionFactor::ProjectionFactor(const Eigen::Vector3d &_pts_i, const Eigen::Vector3d &_pts_j)
     : pts_i(_pts_i), pts_j(_pts_j)
 {
+    set_num_residuals(2);
+    mutable_parameter_block_sizes()->push_back(7);
+    mutable_parameter_block_sizes()->push_back(7);
+    mutable_parameter_block_sizes()->push_back(7);
+    mutable_parameter_block_sizes()->push_back(1);
+
+    velocity_i.setZero();
+    velocity_j.setZero();
+    tangent_base.setZero();
+#ifdef UNIT_SPHERE_ERROR
+    tangent_base = computeTangentBase(pts_j);
+#endif
+}
+
+ProjectionFactor::ProjectionFactor(const Eigen::Vector3d &_pts_i, const Eigen::Vector3d &_pts_j,
+                                   const Eigen::Vector2d &_velocity_i, const Eigen::Vector2d &_velocity_j,
+                                   const double _td_i, const double _td_j,
+                                   const double _row_i, const double _row_j)
+    : pts_i(_pts_i), pts_j(_pts_j), td_i(_td_i), td_j(_td_j), estimate_td(true)
+{
+    set_num_residuals(2);
+    mutable_parameter_block_sizes()->push_back(7);
+    mutable_parameter_block_sizes()->push_back(7);
+    mutable_parameter_block_sizes()->push_back(7);
+    mutable_parameter_block_sizes()->push_back(1);
+    mutable_parameter_block_sizes()->push_back(1);
+
+    velocity_i << _velocity_i.x(), _velocity_i.y(), 0.0;
+    velocity_j << _velocity_j.x(), _velocity_j.y(), 0.0;
+    row_i = _row_i - ROW / 2.0;
+    row_j = _row_j - ROW / 2.0;
+
     tangent_base.setZero();
 #ifdef UNIT_SPHERE_ERROR
     tangent_base = computeTangentBase(pts_j);
@@ -60,8 +92,13 @@ bool ProjectionFactor::Evaluate(double const *const *parameters, double *residua
     const Eigen::Quaterniond qic(parameters[2][6], parameters[2][3], parameters[2][4], parameters[2][5]);
 
     const double inv_dep_i = parameters[3][0];
+    const double td = estimate_td ? parameters[4][0] : 0.0;
 
-    const Eigen::Vector3d pts_camera_i = pts_i / inv_dep_i;
+    const Eigen::Vector3d pts_i_td =
+        estimate_td ? pts_i - (td - td_i + TR / ROW * row_i) * velocity_i : pts_i;
+    const Eigen::Vector3d pts_j_td =
+        estimate_td ? pts_j - (td - td_j + TR / ROW * row_j) * velocity_j : pts_j;
+    const Eigen::Vector3d pts_camera_i = pts_i_td / inv_dep_i;
     const Eigen::Vector3d pts_imu_i    = qic * pts_camera_i + tic;
     const Eigen::Vector3d pts_w        = Qi * pts_imu_i + Pi;
     const Eigen::Vector3d pts_imu_j    = Qj.inverse() * (pts_w - Pj);
@@ -70,10 +107,10 @@ bool ProjectionFactor::Evaluate(double const *const *parameters, double *residua
     Eigen::Map<Eigen::Vector2d> residual(residuals);
 
 #ifdef UNIT_SPHERE_ERROR
-    residual = tangent_base * (pts_camera_j.normalized() - pts_j.normalized());
+    residual = tangent_base * (pts_camera_j.normalized() - pts_j_td.normalized());
 #else
     const double dep_j = pts_camera_j.z();
-    residual = (pts_camera_j / dep_j).head<2>() - pts_j.head<2>();
+    residual = (pts_camera_j / dep_j).head<2>() - pts_j_td.head<2>();
 #endif
 
     residual = sqrt_info * residual;
@@ -84,7 +121,6 @@ bool ProjectionFactor::Evaluate(double const *const *parameters, double *residua
         const Eigen::Matrix3d Rj  = Qj.toRotationMatrix();
         const Eigen::Matrix3d ric = qic.toRotationMatrix();
 
-        // Common sub-expressions reused by multiple jacobian blocks below.
         const Eigen::Matrix3d ric_T          = ric.transpose();
         const Eigen::Matrix3d Rj_T           = Rj.transpose();
         const Eigen::Matrix3d ric_T_Rj_T     = ric_T * Rj_T;
@@ -152,7 +188,14 @@ bool ProjectionFactor::Evaluate(double const *const *parameters, double *residua
         if (jacobians[3])
         {
             Eigen::Map<Eigen::Vector2d> jacobian_feature(jacobians[3]);
-            jacobian_feature = reduce * ric_T_Rj_T_Ri * ric * pts_i * -1.0 / (inv_dep_i * inv_dep_i);
+            jacobian_feature = reduce * ric_T_Rj_T_Ri * ric * pts_i_td * -1.0 / (inv_dep_i * inv_dep_i);
+        }
+
+        if (estimate_td && jacobians[4])
+        {
+            Eigen::Map<Eigen::Vector2d> jacobian_td(jacobians[4]);
+            jacobian_td = reduce * ric_T_Rj_T_Ri * ric * velocity_i / inv_dep_i * -1.0 +
+                          sqrt_info * velocity_j.head<2>();
         }
     }
 

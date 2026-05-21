@@ -8,6 +8,7 @@
 //   4. sqrt_info scaling is applied uniformly to residual and jacobians.
 //   5. Analytical jacobians vs finite-difference (minimal 6-DoF tangent for
 //      poses, 1-DoF for inverse depth).
+//   6. Optional time-delay parameter block residual and td jacobian.
 
 #include <gtest/gtest.h>
 
@@ -26,6 +27,9 @@ namespace
 void setDefaultVisualSqrtInfo()
 {
     ProjectionFactor::sqrt_info = (FOCAL_LENGTH / 1.5) * Eigen::Matrix2d::Identity();
+    ROW = 480.0;
+    COL = 640.0;
+    TR = 0.01;
 }
 
 void packPose(double out[7], const Eigen::Vector3d &p, const Eigen::Quaterniond &q)
@@ -67,6 +71,30 @@ struct EvaluationSetup
     std::array<double *, 4> paramArray()
     {
         return {pose_i.data(), pose_j.data(), pose_ex.data(), inv_depth.data()};
+    }
+};
+
+struct TdEvaluationSetup : EvaluationSetup
+{
+    Eigen::Vector2d velocity_i;
+    Eigen::Vector2d velocity_j;
+    double td_i;
+    double td_j;
+    double row_i;
+    double row_j;
+    double td;
+
+    std::array<double, 1> td_param{};
+
+    void pack()
+    {
+        EvaluationSetup::pack();
+        td_param[0] = td;
+    }
+
+    std::array<double *, 5> paramArray()
+    {
+        return {pose_i.data(), pose_j.data(), pose_ex.data(), inv_depth.data(), td_param.data()};
     }
 };
 
@@ -113,6 +141,42 @@ EvaluationSetup buildConsistentEvaluation(unsigned seed, bool perturb)
         s.Pj += Eigen::Vector3d(0.01, -0.005, 0.003);
         s.Qj  = (s.Qj * Utility::deltaQ(Eigen::Vector3d(0.005, -0.003, 0.004))).normalized();
         s.pts_j += Eigen::Vector3d(0.002, -0.0015, 0.0);  // small obs noise
+    }
+
+    s.pack();
+    return s;
+}
+
+TdEvaluationSetup buildConsistentTdEvaluation(unsigned seed, bool perturb)
+{
+    EvaluationSetup base = buildConsistentEvaluation(seed, /*perturb=*/false);
+
+    TdEvaluationSetup s;
+    static_cast<EvaluationSetup &>(s) = base;
+
+    s.velocity_i = Eigen::Vector2d(0.015, -0.008);
+    s.velocity_j = Eigen::Vector2d(-0.011, 0.006);
+    s.td_i = -0.004;
+    s.td_j = 0.003;
+    s.row_i = ROW * 0.25;
+    s.row_j = ROW * 0.75;
+    s.td = 0.012;
+
+    const double row_i_centered = s.row_i - ROW / 2.0;
+    const double row_j_centered = s.row_j - ROW / 2.0;
+    const Eigen::Vector3d velocity_i_3d(s.velocity_i.x(), s.velocity_i.y(), 0.0);
+    const Eigen::Vector3d velocity_j_3d(s.velocity_j.x(), s.velocity_j.y(), 0.0);
+
+    // Store the raw observations such that ProjectionFactor's time-delay
+    // correction recovers the self-consistent rays from buildConsistentEvaluation().
+    s.pts_i = base.pts_i + (s.td - s.td_i + TR / ROW * row_i_centered) * velocity_i_3d;
+    s.pts_j = base.pts_j + (s.td - s.td_j + TR / ROW * row_j_centered) * velocity_j_3d;
+
+    if (perturb)
+    {
+        s.Pj += Eigen::Vector3d(0.01, -0.005, 0.003);
+        s.Qj = (s.Qj * Utility::deltaQ(Eigen::Vector3d(0.005, -0.003, 0.004))).normalized();
+        s.pts_j += Eigen::Vector3d(0.002, -0.0015, 0.0);
     }
 
     s.pack();
@@ -295,4 +359,59 @@ TEST_F(ProjectionFactorTest, AnalyticJacobiansMatchFiniteDifferences)
         << "inv_depth analytic:\n" << J_id
         << "\nnumeric:\n" << num_J_id
         << "\nmax abs diff: " << (J_id - num_J_id).cwiseAbs().maxCoeff();
+}
+
+TEST_F(ProjectionFactorTest, TimeDelayParameterProducesZeroResidualForConsistentState)
+{
+    TdEvaluationSetup s = buildConsistentTdEvaluation(/*seed=*/128, /*perturb=*/false);
+    ProjectionFactor factor(s.pts_i, s.pts_j, s.velocity_i, s.velocity_j,
+                            s.td_i, s.td_j, s.row_i, s.row_j);
+
+    auto params = s.paramArray();
+    Eigen::Vector2d residual;
+    ASSERT_TRUE(factor.Evaluate(params.data(), residual.data(), nullptr));
+    EXPECT_LT(residual.norm(), 1e-9);
+}
+
+TEST_F(ProjectionFactorTest, TimeDelayParameterJacobianMatchesFiniteDifference)
+{
+    TdEvaluationSetup s = buildConsistentTdEvaluation(/*seed=*/512, /*perturb=*/true);
+    ProjectionFactor factor(s.pts_i, s.pts_j, s.velocity_i, s.velocity_j,
+                            s.td_i, s.td_j, s.row_i, s.row_j);
+
+    Eigen::Matrix<double, 2, 7, Eigen::RowMajor> J_pi;
+    Eigen::Matrix<double, 2, 7, Eigen::RowMajor> J_pj;
+    Eigen::Matrix<double, 2, 7, Eigen::RowMajor> J_ex;
+    Eigen::Matrix<double, 2, 1>                 J_id;
+    Eigen::Matrix<double, 2, 1>                 J_td;
+    std::array<double *, 5> jacobians = {
+        J_pi.data(), J_pj.data(), J_ex.data(), J_id.data(), J_td.data()};
+
+    auto params = s.paramArray();
+    Eigen::Vector2d r0;
+    ASSERT_TRUE(factor.Evaluate(params.data(), r0.data(), jacobians.data()));
+
+    auto residual_with = [&](std::array<double *, 5> p) {
+        Eigen::Vector2d r;
+        factor.Evaluate(p.data(), r.data(), nullptr);
+        return r;
+    };
+
+    constexpr double eps = 1e-6;
+    std::array<double, 1> plus = s.td_param;
+    std::array<double, 1> minus = s.td_param;
+    plus[0] += eps;
+    minus[0] -= eps;
+
+    auto p_plus = s.paramArray();
+    auto p_minus = s.paramArray();
+    p_plus[4] = plus.data();
+    p_minus[4] = minus.data();
+
+    const Eigen::Vector2d num_J_td =
+        (residual_with(p_plus) - residual_with(p_minus)) / (2.0 * eps);
+    EXPECT_TRUE(J_td.isApprox(num_J_td, 1e-4))
+        << "td analytic:\n" << J_td
+        << "\nnumeric:\n" << num_J_td
+        << "\nmax abs diff: " << (J_td - num_J_td).cwiseAbs().maxCoeff();
 }

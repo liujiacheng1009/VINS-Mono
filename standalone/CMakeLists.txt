@@ -20,7 +20,6 @@ add_executable(vins_simulation_standalone
     ../vins_estimator/src/factor/imu_factor.cpp
     ../vins_estimator/src/factor/pose_local_parameterization.cpp
     ../vins_estimator/src/factor/projection_factor.cpp
-    ../vins_estimator/src/factor/projection_td_factor.cpp
     ../vins_estimator/src/factor/marginalization_factor.cpp
     ../vins_estimator/src/utility/utility.cpp
 )

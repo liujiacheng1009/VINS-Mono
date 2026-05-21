@@ -11,6 +11,7 @@
 //   parameters[1]: pose_j (7)
 //   parameters[2]: extrinsic T_bc (7)
 //   parameters[3]: inverse depth in frame i (1)
+//   parameters[4]: optional calibrated time delay td (1)
 //
 // Residual is 2D: difference between the predicted normalized image-plane
 // coordinate in frame j and the observation pts_j (in the same coordinates).
@@ -19,17 +20,26 @@
 //
 // pts_i / pts_j are stored as Vector3d but represent normalized image-plane
 // coordinates with the convention (x/z, y/z, 1).
-class ProjectionFactor : public ceres::SizedCostFunction<2, 7, 7, 7, 1>
+class ProjectionFactor : public ceres::CostFunction
 {
   public:
     ProjectionFactor() = delete;
     explicit ProjectionFactor(const Eigen::Vector3d &pts_i, const Eigen::Vector3d &pts_j);
+    ProjectionFactor(const Eigen::Vector3d &pts_i, const Eigen::Vector3d &pts_j,
+                     const Eigen::Vector2d &velocity_i, const Eigen::Vector2d &velocity_j,
+                     double td_i, double td_j, double row_i, double row_j);
 
     bool Evaluate(double const *const *parameters,
                   double *residuals,
                   double **jacobians) const override;
 
     Eigen::Vector3d pts_i, pts_j;
+    Eigen::Vector3d velocity_i, velocity_j;
+    double td_i = 0.0;
+    double td_j = 0.0;
+    double row_i = 0.0;
+    double row_j = 0.0;
+    bool estimate_td = false;
     Eigen::Matrix<double, 2, 3> tangent_base;
 
     // Square-root information matrix applied uniformly to all visual residuals.

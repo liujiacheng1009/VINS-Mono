@@ -1,6 +1,6 @@
 #include "imu_factor.h"
 
-#include "../utility/logging.h"
+#include <log_value/log_macros.h>
 
 namespace
 {
@@ -262,7 +262,7 @@ bool IMUFactor::Evaluate(double const *const *parameters, double *residuals, dou
         if (pre_integration_->jacobian.maxCoeff() > kJacobianNumericalLimit ||
             pre_integration_->jacobian.minCoeff() < -kJacobianNumericalLimit)
         {
-            ROS_WARN("numerical unstable in preintegration");
+            LOG_TXT_LEVEL(logging::ValueLogger::Level::WARNING, "numerical unstable in preintegration");
         }
 
         // jacobians[0]: pose i.
@@ -288,7 +288,7 @@ bool IMUFactor::Evaluate(double const *const *parameters, double *residuals, dou
             if (jacobian_pose_i.maxCoeff() > kJacobianNumericalLimit ||
                 jacobian_pose_i.minCoeff() < -kJacobianNumericalLimit)
             {
-                ROS_WARN("numerical unstable in preintegration");
+                LOG_TXT_LEVEL(logging::ValueLogger::Level::WARNING, "numerical unstable in preintegration");
             }
         }
         // jacobians[1]: speed/bias i.

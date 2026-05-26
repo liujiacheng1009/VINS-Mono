@@ -10,6 +10,9 @@ find_package(Ceres REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(GTest REQUIRED)
 
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third_party/log_value
+                 ${CMAKE_BINARY_DIR}/third_party/log_value)
+
 include(GoogleTest)
 enable_testing()
 
@@ -23,6 +26,7 @@ add_executable(imu_factor_test
 )
 
 target_include_directories(imu_factor_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
     ${VINS_SRC_DIR}
     ${EIGEN3_INCLUDE_DIRS}
     ${CERES_INCLUDE_DIRS}
@@ -34,6 +38,7 @@ target_link_libraries(imu_factor_test PRIVATE
     GTest::gtest_main
     ${CERES_LIBRARIES}
     ${OpenCV_LIBS}
+    log_value::log_value
     pthread
 )
 
@@ -47,6 +52,7 @@ add_executable(projection_factor_test
 )
 
 target_include_directories(projection_factor_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
     ${VINS_SRC_DIR}
     ${EIGEN3_INCLUDE_DIRS}
     ${CERES_INCLUDE_DIRS}
@@ -58,6 +64,7 @@ target_link_libraries(projection_factor_test PRIVATE
     GTest::gtest_main
     ${CERES_LIBRARIES}
     ${OpenCV_LIBS}
+    log_value::log_value
     pthread
 )
 
@@ -70,6 +77,7 @@ add_executable(marginalization_factor_test
 )
 
 target_include_directories(marginalization_factor_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
     ${VINS_SRC_DIR}
     ${EIGEN3_INCLUDE_DIRS}
     ${CERES_INCLUDE_DIRS}
@@ -81,6 +89,7 @@ target_link_libraries(marginalization_factor_test PRIVATE
     GTest::gtest_main
     ${CERES_LIBRARIES}
     ${OpenCV_LIBS}
+    log_value::log_value
     pthread
 )
 

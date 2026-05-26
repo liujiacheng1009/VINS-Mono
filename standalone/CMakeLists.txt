@@ -58,7 +58,12 @@ target_include_directories(state_manager_smoke_test PRIVATE
     ${OpenCV_INCLUDE_DIRS}
 )
 
-target_link_libraries(state_manager_smoke_test pthread ${OpenCV_LIBS} ${CERES_LIBRARIES})
+target_link_libraries(state_manager_smoke_test
+    pthread
+    ${OpenCV_LIBS}
+    ${CERES_LIBRARIES}
+    log_value::log_value
+)
 
 add_test(NAME state_manager_smoke COMMAND state_manager_smoke_test)
 add_test(

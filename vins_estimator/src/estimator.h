@@ -7,7 +7,6 @@
 #include "utility/tic_toc.h"
 #include "utility/simple_types.h"
 #include "utility/image_frame_input.h"
-#include "utility/logging.h"
 
 #include <ceres/ceres.h>
 #include "factor/imu_factor.h"

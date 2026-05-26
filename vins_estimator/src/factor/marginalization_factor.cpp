@@ -1,6 +1,7 @@
 #include "marginalization_factor.h"
 
-#include "../utility/logging.h"
+#include <cassert>
+#include <log_value/log_macros.h>
 #include "../utility/utility.h"
 
 #include <algorithm>
@@ -231,8 +232,8 @@ void MarginalizationInfo::marginalize()
         int ret = pthread_create(&tids[i], NULL, ThreadsConstructA, static_cast<void *>(&threadsstruct[i]));
         if (ret != 0)
         {
-            ROS_WARN("pthread_create error");
-            ROS_BREAK();
+            LOG_TXT_LEVEL(logging::ValueLogger::Level::ERROR, "pthread_create error");
+            assert(false);
         }
     }
     for (int i = num_threads - 1; i >= 0; i--)

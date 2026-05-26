@@ -1,6 +1,9 @@
 #include "feature_manager.h"
 #include "state_manager.h"
 
+#include <cassert>
+#include <log_value/log_macros.h>
+
 int FeaturePerId::endFrame()
 {
     return start_slot + feature_per_frame.size() - 1;
@@ -30,8 +33,8 @@ int FeatureManager::getFeatureCount()
 
 bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> &image, double td)
 {
-    ROS_DEBUG("input feature: %d", (int)image.size());
-    ROS_DEBUG("num of feature: %d", getFeatureCount());
+    LOG_TXT_LEVEL(logging::ValueLogger::Level::INFO, "input feature: ", static_cast<int>(image.size()));
+    LOG_TXT_LEVEL(logging::ValueLogger::Level::INFO, "num of feature: ", getFeatureCount());
     double parallax_sum = 0;
     int parallax_num = 0;
     last_track_num = 0;
@@ -76,8 +79,9 @@ bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vec
     }
     else
     {
-        ROS_DEBUG("parallax_sum: %lf, parallax_num: %d", parallax_sum, parallax_num);
-        ROS_DEBUG("current parallax: %lf", parallax_sum / parallax_num * focalLength());
+        LOG_TXT_LEVEL(logging::ValueLogger::Level::INFO, "parallax_sum: ", parallax_sum, ", parallax_num: ", parallax_num);
+        LOG_TXT_LEVEL(logging::ValueLogger::Level::INFO, "current parallax: ",
+                      parallax_sum / parallax_num * focalLength());
         return parallax_sum / parallax_num >= vinsParameters().minParallax();
     }
 }
@@ -92,7 +96,6 @@ void FeatureManager::setDepth(const VectorXd &dep_vec)
             continue;
 
         it_per_id.estimated_depth = 1.0 / dep_vec(++feature_index);
-        //ROS_INFO("feature id %d , start_slot %d, depth %f ", it_per_id->feature_id, it_per_id-> start_slot, it_per_id->estimated_depth);
         if (it_per_id.estimated_depth < 0)
         {
             it_per_id.solve_flag = 2;
@@ -140,7 +143,7 @@ void FeatureManager::triangulate(StateManager &state)
             continue;
         int imu_i = it_per_id.start_slot, imu_j = imu_i - 1;
 
-        ROS_ASSERT(numOfCam() >= 1);
+        assert(numOfCam() >= 1);
         Eigen::MatrixXd svd_A(2 * it_per_id.feature_per_frame.size(), 4);
         int svd_idx = 0;
 
@@ -168,7 +171,7 @@ void FeatureManager::triangulate(StateManager &state)
             if (imu_i == imu_j)
                 continue;
         }
-        ROS_ASSERT(svd_idx == svd_A.rows());
+        assert(svd_idx == svd_A.rows());
         Eigen::Vector4d svd_V = Eigen::JacobiSVD<Eigen::MatrixXd>(svd_A, Eigen::ComputeThinV).matrixV().rightCols<1>();
         double svd_method = svd_V[2] / svd_V[3];
         //it_per_id->estimated_depth = -b / A;

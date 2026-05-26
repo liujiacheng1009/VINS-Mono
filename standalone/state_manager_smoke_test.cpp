@@ -2,6 +2,8 @@
 #include "parameters.h"
 #include "utility/utility.h"
 
+#include <log_value/value_logger.h>
+
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
@@ -20,6 +22,11 @@ bool check(const char *name, bool ok)
 
 int main()
 {
+    logging::ValueLogger::Options log_opts;
+    log_opts.program_name = "state_manager_smoke_test";
+    log_opts.also_log_to_stderr = true;
+    logging::ValueLogger::Init(log_opts);
+
     vinsParameters().setWindowSize(10);
     vinsParameters().setNumOfCam(1);
     vinsParameters().setMaxFeatureCount(1000);

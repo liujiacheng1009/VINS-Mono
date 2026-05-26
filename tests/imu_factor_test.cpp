@@ -9,6 +9,8 @@
 
 #include <gtest/gtest.h>
 
+#include "vins_glog_init.h"
+
 #include <algorithm>
 #include <array>
 #include <memory>

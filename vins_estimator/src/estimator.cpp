@@ -1,9 +1,12 @@
 #include "estimator.h"
 
+#include <cassert>
+#include <log_value/log_macros.h>
+
 Estimator::Estimator()
     : f_manager()
 {
-    ROS_INFO("init begins");
+    LOG_TXT("init begins");
     clearState();
 }
 
@@ -85,17 +88,18 @@ void Estimator::processImage(const ImageFrameInput &input)
     state_.bindFrame(slot, frame_id, header);
 
     const auto &image = input.features;
-    ROS_DEBUG("new image coming ------------------------------------------");
-    ROS_DEBUG("Adding feature points %lu", image.size());
+    LOG_TXT_LEVEL(logging::ValueLogger::Level::INFO, "new image coming ------------------------------------------");
+    LOG_TXT_LEVEL(logging::ValueLogger::Level::INFO, "Adding feature points ", image.size());
     if (f_manager.addFeatureCheckParallax(slot, image, state_.timeDelay()))
         marginalization_flag = MARGIN_OLD;
     else
         marginalization_flag = MARGIN_SECOND_NEW;
 
-    ROS_DEBUG("this frame is--------------------%s", marginalization_flag ? "reject" : "accept");
-    ROS_DEBUG("%s", marginalization_flag ? "Non-keyframe" : "Keyframe");
-    ROS_DEBUG("Solving %d", slot);
-    ROS_DEBUG("number of feature: %d", f_manager.getFeatureCount());
+    LOG_TXT_LEVEL(logging::ValueLogger::Level::INFO, "this frame is--------------------",
+                  marginalization_flag ? "reject" : "accept");
+    LOG_TXT_LEVEL(logging::ValueLogger::Level::INFO, marginalization_flag ? "Non-keyframe" : "Keyframe");
+    LOG_TXT_LEVEL(logging::ValueLogger::Level::INFO, "Solving ", slot);
+    LOG_TXT_LEVEL(logging::ValueLogger::Level::INFO, "number of feature: ", f_manager.getFeatureCount());
 
     state_.tmpPreIntegration() =
         std::make_shared<Integrator>(acc_0, gyr_0, state_.accBiasAtSlot(slot), state_.gyrBiasAtSlot(slot));
@@ -108,7 +112,7 @@ void Estimator::processImage(const ImageFrameInput &input)
             solveOdometry();
             slideWindow();
             f_manager.removeFailures();
-            ROS_INFO("GT Initialization finish!");
+            LOG_TXT("GT Initialization finish!");
             state_.updateKeyframeSnapshot();
         }
         else
@@ -118,22 +122,22 @@ void Estimator::processImage(const ImageFrameInput &input)
     {
         TicToc t_solve;
         solveOdometry();
-        ROS_DEBUG("solver costs: %fms", t_solve.toc());
+        LOG_TXT_LEVEL(logging::ValueLogger::Level::INFO, "solver costs: ", t_solve.toc(), "ms");
 
         if (failureDetection())
         {
-            ROS_WARN("failure detection!");
+            LOG_TXT_LEVEL(logging::ValueLogger::Level::WARNING, "failure detection!");
             failure_occur = 1;
             clearState();
             setParameter();
-            ROS_WARN("system reboot!");
+            LOG_TXT_LEVEL(logging::ValueLogger::Level::WARNING, "system reboot!");
             return;
         }
 
         TicToc t_margin;
         slideWindow();
         f_manager.removeFailures();
-        ROS_DEBUG("marginalization costs: %fms", t_margin.toc());
+        LOG_TXT_LEVEL(logging::ValueLogger::Level::INFO, "marginalization costs: ", t_margin.toc(), "ms");
 
         state_.updateKeyframeSnapshot();
     }
@@ -157,7 +161,7 @@ void Estimator::solveOdometry()
     {
         TicToc t_tri;
         f_manager.triangulate(state_);
-        ROS_DEBUG("triangulation costs %f", t_tri.toc());
+        LOG_TXT_LEVEL(logging::ValueLogger::Level::INFO, "triangulation costs ", t_tri.toc());
         optimization();
     }
 }
@@ -191,28 +195,28 @@ bool Estimator::failureDetection()
 {
     if (f_manager.last_track_num < 2)
     {
-        ROS_INFO(" little feature %d", f_manager.last_track_num);
+        LOG_TXT(" little feature ", f_manager.last_track_num);
     }
     if (state_.accBiasAtSlot(state_.windowSize()).norm() > 2.5)
     {
-        ROS_INFO(" big IMU acc bias estimation %f", state_.accBiasAtSlot(state_.windowSize()).norm());
+        LOG_TXT(" big IMU acc bias estimation ", state_.accBiasAtSlot(state_.windowSize()).norm());
         return true;
     }
     if (state_.gyrBiasAtSlot(state_.windowSize()).norm() > 1.0)
     {
-        ROS_INFO(" big IMU gyr bias estimation %f", state_.gyrBiasAtSlot(state_.windowSize()).norm());
+        LOG_TXT(" big IMU gyr bias estimation ", state_.gyrBiasAtSlot(state_.windowSize()).norm());
         return true;
     }
 
     const Vector3d tmp_P = state_.positionAtSlot(state_.windowSize());
     if ((tmp_P - state_.lastPosition()).norm() > 5)
     {
-        ROS_INFO(" big translation");
+        LOG_TXT(" big translation");
         return true;
     }
     if (abs(tmp_P.z() - state_.lastPosition().z()) > 1)
     {
-        ROS_INFO(" big z translation");
+        LOG_TXT(" big z translation");
         return true;
     }
     const Matrix3d tmp_R = state_.rotationAtSlot(state_.windowSize());
@@ -221,7 +225,7 @@ bool Estimator::failureDetection()
     double delta_angle = acos(delta_Q.w()) * 2.0 / 3.14 * 180.0;
     if (delta_angle > 50)
     {
-        ROS_INFO(" big delta_angle ");
+        LOG_TXT(" big delta_angle ");
     }
     return false;
 }
@@ -309,8 +313,8 @@ void Estimator::optimization()
         }
     }
 
-    ROS_DEBUG("visual measurement count: %d", f_m_cnt);
-    ROS_DEBUG("prepare for ceres: %f", t_prepare.toc());
+    LOG_TXT_LEVEL(logging::ValueLogger::Level::INFO, "visual measurement count: ", f_m_cnt);
+    LOG_TXT_LEVEL(logging::ValueLogger::Level::INFO, "prepare for ceres: ", t_prepare.toc());
 
     ceres::Solver::Options options;
     options.linear_solver_type = ceres::DENSE_SCHUR;
@@ -323,8 +327,8 @@ void Estimator::optimization()
     TicToc t_solver;
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
-    ROS_DEBUG("Iterations : %d", static_cast<int>(summary.iterations.size()));
-    ROS_DEBUG("solver costs: %f", t_solver.toc());
+    LOG_TXT_LEVEL(logging::ValueLogger::Level::INFO, "Iterations : ", static_cast<int>(summary.iterations.size()));
+    LOG_TXT_LEVEL(logging::ValueLogger::Level::INFO, "solver costs: ", t_solver.toc());
 
     syncParametersToState();
 
@@ -416,11 +420,11 @@ void Estimator::optimization()
 
         TicToc t_pre_margin;
         marginalization_info->preMarginalize();
-        ROS_DEBUG("pre marginalization %f ms", t_pre_margin.toc());
+        LOG_TXT_LEVEL(logging::ValueLogger::Level::INFO, "pre marginalization ", t_pre_margin.toc(), " ms");
 
         TicToc t_margin;
         marginalization_info->marginalize();
-        ROS_DEBUG("marginalization %f ms", t_margin.toc());
+        LOG_TXT_LEVEL(logging::ValueLogger::Level::INFO, "marginalization ", t_margin.toc(), " ms");
 
         std::unordered_map<ParameterBlockId, double *> addr_shift;
         for (int i = 1; i <= state_.windowSize(); i++)
@@ -454,7 +458,7 @@ void Estimator::optimization()
                 vector<int> drop_set;
                 for (int i = 0; i < static_cast<int>(last_marginalization_parameter_blocks.size()); i++)
                 {
-                    ROS_ASSERT(last_marginalization_parameter_blocks[i] != state_.speedBiasParameter(state_.windowSize() - 1));
+                    assert(last_marginalization_parameter_blocks[i] != state_.speedBiasParameter(state_.windowSize() - 1));
                     if (last_marginalization_parameter_blocks[i] == state_.poseParameter(state_.windowSize() - 1))
                         drop_set.push_back(i);
                 }
@@ -501,8 +505,8 @@ void Estimator::optimization()
             last_marginalization_parameter_blocks = parameter_blocks;
         }
     }
-    ROS_DEBUG("whole marginalization costs: %f", t_whole_marginalization.toc());
-    ROS_DEBUG("whole time for ceres: %f", t_whole.toc());
+    LOG_TXT_LEVEL(logging::ValueLogger::Level::INFO, "whole marginalization costs: ", t_whole_marginalization.toc());
+    LOG_TXT_LEVEL(logging::ValueLogger::Level::INFO, "whole time for ceres: ", t_whole.toc());
 }
 
 void Estimator::slideWindow()

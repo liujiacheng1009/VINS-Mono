@@ -1,5 +1,7 @@
 #include "parameters.h"
 
+#include <log_value/log_macros.h>
+
 VinsParameters &VinsParameters::instance()
 {
     static VinsParameters params;
@@ -37,17 +39,18 @@ void VinsParameters::loadFromConfig(const std::string &config_file)
 
     if (windowSize() < 2)
     {
-        ROS_WARN("window_size %d too small, using 2", windowSize());
+        LOG_TXT_LEVEL(logging::ValueLogger::Level::WARNING, "window_size ", windowSize(), " too small, using 2");
         setWindowSize(2);
     }
     if (numOfCam() < 1)
     {
-        ROS_WARN("num_of_cam %d invalid, using 1", numOfCam());
+        LOG_TXT_LEVEL(logging::ValueLogger::Level::WARNING, "num_of_cam ", numOfCam(), " invalid, using 1");
         setNumOfCam(1);
     }
     if (maxFeatureCount() < 10)
     {
-        ROS_WARN("max_feature_count %d too small, using 10", maxFeatureCount());
+        LOG_TXT_LEVEL(logging::ValueLogger::Level::WARNING, "max_feature_count ", maxFeatureCount(),
+                      " too small, using 10");
         setMaxFeatureCount(10);
     }
 
@@ -73,7 +76,7 @@ void VinsParameters::loadFromConfig(const std::string &config_file)
     setGravityNorm(fsSettings["g_norm"]);
     setImageRow(fsSettings["image_height"]);
     setImageCol(fsSettings["image_width"]);
-    ROS_INFO("ROW: %f COL: %f ", imageRow(), imageCol());
+    LOG_TXT("ROW: ", imageRow(), " COL: ", imageCol());
 
     const int estimate_extrinsic = fsSettings["estimate_extrinsic"];
     setEstimateExtrinsic(estimate_extrinsic);
@@ -81,16 +84,17 @@ void VinsParameters::loadFromConfig(const std::string &config_file)
 
     if (estimate_extrinsic == 2)
     {
-        ROS_WARN("have no prior about extrinsic param, calibrate extrinsic param");
+        LOG_TXT_LEVEL(logging::ValueLogger::Level::WARNING,
+                      "have no prior about extrinsic param, calibrate extrinsic param");
         for (int c = 0; c < numOfCam(); ++c)
             addExtrinsic(Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero());
     }
     else
     {
         if (estimate_extrinsic == 1)
-            ROS_WARN(" Optimize extrinsic param around initial guess!");
+            LOG_TXT_LEVEL(logging::ValueLogger::Level::WARNING, " Optimize extrinsic param around initial guess!");
         if (estimate_extrinsic == 0)
-            ROS_WARN(" fix extrinsic param ");
+            LOG_TXT_LEVEL(logging::ValueLogger::Level::WARNING, " fix extrinsic param ");
 
         cv::Mat cv_R, cv_T;
         fsSettings["extrinsicRotation"] >> cv_R;
@@ -104,11 +108,12 @@ void VinsParameters::loadFromConfig(const std::string &config_file)
         for (int c = 0; c < numOfCam(); ++c)
             addExtrinsic(eigen_R, eigen_T);
         if (numOfCam() > 1)
-            ROS_WARN("num_of_cam=%d: using the same extrinsicRotation/Translation for every camera; "
-                     "provide per-camera extrinsics when stereo calibration differs.",
-                     numOfCam());
-        ROS_INFO_STREAM("Extrinsic_R : " << std::endl << ric()[0]);
-        ROS_INFO_STREAM("Extrinsic_T : " << std::endl << tic()[0].transpose());
+            LOG_TXT_LEVEL(logging::ValueLogger::Level::WARNING,
+                          "num_of_cam=", numOfCam(),
+                          ": using the same extrinsicRotation/Translation for every camera; "
+                          "provide per-camera extrinsics when stereo calibration differs.");
+        LOG_TXT("Extrinsic_R :\n", ric()[0]);
+        LOG_TXT("Extrinsic_T :\n", tic()[0].transpose());
     }
 
     setInitDepth(5.0);
@@ -116,15 +121,15 @@ void VinsParameters::loadFromConfig(const std::string &config_file)
     setTd(fsSettings["td"]);
     setEstimateTd(fsSettings["estimate_td"]);
     if (estimateTd())
-        ROS_INFO_STREAM("Unsynchronized sensors, online estimate time offset, initial td: " << td());
+        LOG_TXT("Unsynchronized sensors, online estimate time offset, initial td: ", td());
     else
-        ROS_INFO_STREAM("Synchronized sensors, fix time offset: " << td());
+        LOG_TXT("Synchronized sensors, fix time offset: ", td());
 
     setRollingShutter(fsSettings["rolling_shutter"]);
     if (rollingShutter())
     {
         setRollingShutterTr(fsSettings["rolling_shutter_tr"]);
-        ROS_INFO_STREAM("rolling shutter camera, read out time per line: " << rollingShutterTr());
+        LOG_TXT("rolling shutter camera, read out time per line: ", rollingShutterTr());
     }
     else
     {

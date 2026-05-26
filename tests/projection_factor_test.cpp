@@ -27,9 +27,10 @@ namespace
 void setDefaultVisualSqrtInfo()
 {
     ProjectionFactor::sqrt_info = (FOCAL_LENGTH / 1.5) * Eigen::Matrix2d::Identity();
-    ROW = 480.0;
-    COL = 640.0;
-    TR = 0.01;
+    auto &params = vinsParameters();
+    params.setImageRow(480.0);
+    params.setImageCol(640.0);
+    params.setRollingShutterTr(0.01);
 }
 
 void packPose(double out[7], const Eigen::Vector3d &p, const Eigen::Quaterniond &q)
@@ -158,19 +159,21 @@ TdEvaluationSetup buildConsistentTdEvaluation(unsigned seed, bool perturb)
     s.velocity_j = Eigen::Vector2d(-0.011, 0.006);
     s.td_i = -0.004;
     s.td_j = 0.003;
-    s.row_i = ROW * 0.25;
-    s.row_j = ROW * 0.75;
+    const double image_row = vinsParameters().imageRow();
+    const double rolling_tr = vinsParameters().rollingShutterTr();
+    s.row_i = image_row * 0.25;
+    s.row_j = image_row * 0.75;
     s.td = 0.012;
 
-    const double row_i_centered = s.row_i - ROW / 2.0;
-    const double row_j_centered = s.row_j - ROW / 2.0;
+    const double row_i_centered = s.row_i - image_row / 2.0;
+    const double row_j_centered = s.row_j - image_row / 2.0;
     const Eigen::Vector3d velocity_i_3d(s.velocity_i.x(), s.velocity_i.y(), 0.0);
     const Eigen::Vector3d velocity_j_3d(s.velocity_j.x(), s.velocity_j.y(), 0.0);
 
     // Store the raw observations such that ProjectionFactor's time-delay
     // correction recovers the self-consistent rays from buildConsistentEvaluation().
-    s.pts_i = base.pts_i + (s.td - s.td_i + TR / ROW * row_i_centered) * velocity_i_3d;
-    s.pts_j = base.pts_j + (s.td - s.td_j + TR / ROW * row_j_centered) * velocity_j_3d;
+    s.pts_i = base.pts_i + (s.td - s.td_i + rolling_tr / image_row * row_i_centered) * velocity_i_3d;
+    s.pts_j = base.pts_j + (s.td - s.td_j + rolling_tr / image_row * row_j_centered) * velocity_j_3d;
 
     if (perturb)
     {

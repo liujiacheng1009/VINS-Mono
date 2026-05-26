@@ -32,7 +32,7 @@ void StateManager::clear()
 
     slot_count_ = 0;
     id_to_slot_.clear();
-    td_ = TD;
+    td_ = vinsParameters().td();
     tmp_pre_integration_.reset();
     clearMarginalizationPrior();
 
@@ -48,10 +48,10 @@ void StateManager::initFromConfig()
 {
     for (int i = 0; i < NUM_OF_CAM; i++)
     {
-        tic_[i] = TIC[i];
-        ric_[i] = RIC[i];
+        tic_[i] = vinsParameters().tic()[i];
+        ric_[i] = vinsParameters().ric()[i];
     }
-    td_ = TD;
+    td_ = vinsParameters().td();
 }
 
 void StateManager::copyExtrinsicRotations(Matrix3d ric_out[NUM_OF_CAM]) const
@@ -257,7 +257,7 @@ void StateManager::syncToParameters()
         para_Ex_Pose_[i][5] = q.z();
         para_Ex_Pose_[i][6] = q.w();
     }
-    if (ESTIMATE_TD)
+    if (vinsParameters().estimateTd())
         para_Td_[0][0] = td_;
 }
 
@@ -330,7 +330,7 @@ void StateManager::syncFromParameters(const SyncFromOptions &opts)
                        .toRotationMatrix();
     }
 
-    if (ESTIMATE_TD)
+    if (vinsParameters().estimateTd())
         td_ = para_Td_[0][0];
 }
 

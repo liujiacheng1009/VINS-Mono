@@ -92,7 +92,7 @@ bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vec
     {
         ROS_DEBUG("parallax_sum: %lf, parallax_num: %d", parallax_sum, parallax_num);
         ROS_DEBUG("current parallax: %lf", parallax_sum / parallax_num * FOCAL_LENGTH);
-        return parallax_sum / parallax_num >= MIN_PARALLAX;
+        return parallax_sum / parallax_num >= vinsParameters().minParallax();
     }
 }
 
@@ -251,7 +251,7 @@ void FeatureManager::triangulate(StateManager &state)
 
         if (it_per_id.estimated_depth < 0.1)
         {
-            it_per_id.estimated_depth = INIT_DEPTH;
+            it_per_id.estimated_depth = vinsParameters().initDepth();
         }
 
     }
@@ -300,7 +300,7 @@ void FeatureManager::removeBackShiftDepth(Eigen::Matrix3d marg_R, Eigen::Vector3
                 if (dep_j > 0)
                     it->estimated_depth = dep_j;
                 else
-                    it->estimated_depth = INIT_DEPTH;
+                    it->estimated_depth = vinsParameters().initDepth();
             }
         }
         // remove tracking-lost feature after marginalize

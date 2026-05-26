@@ -14,7 +14,7 @@ void Estimator::setParameter()
     state_.copyExtrinsicRotations(ric);
     f_manager.setRic(ric);
     ProjectionFactor::sqrt_info = FOCAL_LENGTH / 1.5 * Matrix2d::Identity();
-    g = G;
+    g = vinsParameters().gravity();
 }
 
 void Estimator::initializeWithGroundTruth(double t, const Vector3d &P, const Matrix3d &R, const Vector3d &V,
@@ -40,7 +40,7 @@ void Estimator::clearState()
     first_imu = false;
     sum_of_back = 0;
     sum_of_front = 0;
-    g = G;
+    g = vinsParameters().gravity();
 
     state_.initFromConfig();
     Matrix3d ric[NUM_OF_CAM];
@@ -246,10 +246,10 @@ void Estimator::optimization()
     {
         ceres::LocalParameterization *local_parameterization = new PoseLocalParameterization();
         problem.AddParameterBlock(state_.extrinsicParameter(i), SIZE_POSE, local_parameterization);
-        if (!ESTIMATE_EXTRINSIC)
+        if (!vinsParameters().estimateExtrinsic())
             problem.SetParameterBlockConstant(state_.extrinsicParameter(i));
     }
-    if (ESTIMATE_TD)
+    if (vinsParameters().estimateTd())
         problem.AddParameterBlock(state_.timeDelayParameter(), 1);
 
     TicToc t_whole, t_prepare;
@@ -295,7 +295,7 @@ void Estimator::optimization()
                 continue;
 
             Vector3d pts_j = it_per_frame.point;
-            if (ESTIMATE_TD)
+            if (vinsParameters().estimateTd())
             {
                 ProjectionFactor *f = new ProjectionFactor(
                     pts_i, pts_j, it_per_id.feature_per_frame[0].velocity, it_per_frame.velocity,
@@ -321,11 +321,11 @@ void Estimator::optimization()
     ceres::Solver::Options options;
     options.linear_solver_type = ceres::DENSE_SCHUR;
     options.trust_region_strategy_type = ceres::DOGLEG;
-    options.max_num_iterations = NUM_ITERATIONS;
+    options.max_num_iterations = vinsParameters().numIterations();
     if (marginalization_flag == MARGIN_OLD)
-        options.max_solver_time_in_seconds = SOLVER_TIME * 4.0 / 5.0;
+        options.max_solver_time_in_seconds = vinsParameters().solverTime() * 4.0 / 5.0;
     else
-        options.max_solver_time_in_seconds = SOLVER_TIME;
+        options.max_solver_time_in_seconds = vinsParameters().solverTime();
     TicToc t_solver;
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
@@ -392,7 +392,7 @@ void Estimator::optimization()
                         continue;
 
                     Vector3d pts_j = it_per_frame.point;
-                    if (ESTIMATE_TD)
+                    if (vinsParameters().estimateTd())
                     {
                         ProjectionFactor *f = new ProjectionFactor(
                             pts_i, pts_j, it_per_id.feature_per_frame[0].velocity, it_per_frame.velocity,
@@ -437,7 +437,7 @@ void Estimator::optimization()
         }
         for (int i = 0; i < NUM_OF_CAM; i++)
             addr_shift[reinterpret_cast<ParameterBlockId>(state_.extrinsicParameter(i))] = state_.extrinsicParameter(i);
-        if (ESTIMATE_TD)
+        if (vinsParameters().estimateTd())
             addr_shift[reinterpret_cast<ParameterBlockId>(state_.timeDelayParameter())] = state_.timeDelayParameter();
 
         vector<double *> parameter_blocks = marginalization_info->getParameterBlocks(addr_shift);
@@ -496,7 +496,7 @@ void Estimator::optimization()
             for (int i = 0; i < NUM_OF_CAM; i++)
                 addr_shift[reinterpret_cast<ParameterBlockId>(state_.extrinsicParameter(i))] =
                     state_.extrinsicParameter(i);
-            if (ESTIMATE_TD)
+            if (vinsParameters().estimateTd())
                 addr_shift[reinterpret_cast<ParameterBlockId>(state_.timeDelayParameter())] =
                     state_.timeDelayParameter();
 

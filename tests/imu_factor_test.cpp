@@ -33,11 +33,12 @@ void setDefaultImuNoise()
     // (which is filled inside Integrator's ctor) and IMUFactor::Evaluate later
     // computes `LLT(covariance.inverse())`. With zero noise the covariance is
     // singular and the LLT factor is full of NaN/Inf.
-    ACC_N = 0.1;
-    ACC_W = 0.001;
-    GYR_N = 0.01;
-    GYR_W = 0.0001;
-    G = Eigen::Vector3d(0.0, 0.0, 9.81);
+    auto &params = vinsParameters();
+    params.setAccNoise(0.1);
+    params.setAccRandomWalk(0.001);
+    params.setGyrNoise(0.01);
+    params.setGyrRandomWalk(0.0001);
+    params.setGravity(Eigen::Vector3d(0.0, 0.0, 9.81));
 }
 
 // Build a deterministic IMU stream for reuse across tests.
@@ -113,9 +114,10 @@ void rollForwardState(const Integrator &integ,
                       Eigen::Vector3d *Vj)
 {
     const double t = integ.sum_dt;
-    *Pj = Pi + Vi * t - 0.5 * G * t * t + Qi * integ.delta_p;
+    const Eigen::Vector3d &gravity = vinsParameters().gravity();
+    *Pj = Pi + Vi * t - 0.5 * gravity * t * t + Qi * integ.delta_p;
     *Qj = Qi * integ.delta_q;
-    *Vj = Vi - G * t + Qi * integ.delta_v;
+    *Vj = Vi - gravity * t + Qi * integ.delta_v;
 }
 
 class IntegratorTest : public ::testing::Test
@@ -158,10 +160,11 @@ TEST_F(IntegratorTest, ConstructorInitializesStateAndNoise)
     EXPECT_EQ(integ.linearized_bg, bg);
 
     // Spot-check that the noise matrix has the configured diagonal blocks.
-    EXPECT_DOUBLE_EQ(integ.noise(0, 0), ACC_N * ACC_N);
-    EXPECT_DOUBLE_EQ(integ.noise(3, 3), GYR_N * GYR_N);
-    EXPECT_DOUBLE_EQ(integ.noise(12, 12), ACC_W * ACC_W);
-    EXPECT_DOUBLE_EQ(integ.noise(15, 15), GYR_W * GYR_W);
+    const auto &params = vinsParameters();
+    EXPECT_DOUBLE_EQ(integ.noise(0, 0), params.accNoise() * params.accNoise());
+    EXPECT_DOUBLE_EQ(integ.noise(3, 3), params.gyrNoise() * params.gyrNoise());
+    EXPECT_DOUBLE_EQ(integ.noise(12, 12), params.accRandomWalk() * params.accRandomWalk());
+    EXPECT_DOUBLE_EQ(integ.noise(15, 15), params.gyrRandomWalk() * params.gyrRandomWalk());
 }
 
 TEST_F(IntegratorTest, ZeroMeasurementsKeepIncrementsZero)

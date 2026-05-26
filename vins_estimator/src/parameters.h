@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <vector>
 #include <eigen3/Eigen/Dense>
 #include "utility/utility.h"
@@ -14,30 +15,120 @@ const int NUM_OF_CAM = 1;
 const int NUM_OF_F = 1000;
 //#define UNIT_SPHERE_ERROR
 
-extern double INIT_DEPTH;
-extern double MIN_PARALLAX;
-extern int ESTIMATE_EXTRINSIC;
+/** Runtime configuration loaded from YAML; access only via getters/setters. */
+class VinsParameters
+{
+  public:
+    static VinsParameters &instance();
 
-extern double ACC_N, ACC_W;
-extern double GYR_N, GYR_W;
+    void loadFromConfig(const std::string &config_file);
 
-extern std::vector<Eigen::Matrix3d> RIC;
-extern std::vector<Eigen::Vector3d> TIC;
-extern Eigen::Vector3d G;
+    double initDepth() const { return init_depth_; }
+    void setInitDepth(double v) { init_depth_ = v; }
 
-extern double BIAS_ACC_THRESHOLD;
-extern double BIAS_GYR_THRESHOLD;
-extern double SOLVER_TIME;
-extern int NUM_ITERATIONS;
-extern std::string EX_CALIB_RESULT_PATH;
-extern std::string VINS_RESULT_PATH;
-extern std::string IMU_TOPIC;
-extern double TD;
-extern double TR;
-extern int ESTIMATE_TD;
-extern int ROLLING_SHUTTER;
-extern double ROW, COL;
+    double minParallax() const { return min_parallax_; }
+    void setMinParallax(double v) { min_parallax_ = v; }
 
+    double accNoise() const { return acc_n_; }
+    void setAccNoise(double v) { acc_n_ = v; }
+
+    double accRandomWalk() const { return acc_w_; }
+    void setAccRandomWalk(double v) { acc_w_ = v; }
+
+    double gyrNoise() const { return gyr_n_; }
+    void setGyrNoise(double v) { gyr_n_ = v; }
+
+    double gyrRandomWalk() const { return gyr_w_; }
+    void setGyrRandomWalk(double v) { gyr_w_ = v; }
+
+    const std::vector<Eigen::Matrix3d> &ric() const { return ric_; }
+    std::vector<Eigen::Matrix3d> &ric() { return ric_; }
+    void setRic(std::vector<Eigen::Matrix3d> v) { ric_ = std::move(v); }
+    void clearExtrinsics() { ric_.clear(); tic_.clear(); }
+    void addExtrinsic(const Eigen::Matrix3d &R, const Eigen::Vector3d &T)
+    {
+        ric_.push_back(R);
+        tic_.push_back(T);
+    }
+
+    const std::vector<Eigen::Vector3d> &tic() const { return tic_; }
+    std::vector<Eigen::Vector3d> &tic() { return tic_; }
+    void setTic(std::vector<Eigen::Vector3d> v) { tic_ = std::move(v); }
+
+    const Eigen::Vector3d &gravity() const { return gravity_; }
+    Eigen::Vector3d &gravity() { return gravity_; }
+    void setGravity(const Eigen::Vector3d &g) { gravity_ = g; }
+    void setGravityNorm(double g_norm) { gravity_.z() = g_norm; }
+
+    double biasAccThreshold() const { return bias_acc_threshold_; }
+    void setBiasAccThreshold(double v) { bias_acc_threshold_ = v; }
+
+    double biasGyrThreshold() const { return bias_gyr_threshold_; }
+    void setBiasGyrThreshold(double v) { bias_gyr_threshold_ = v; }
+
+    double solverTime() const { return solver_time_; }
+    void setSolverTime(double v) { solver_time_ = v; }
+
+    int numIterations() const { return num_iterations_; }
+    void setNumIterations(int v) { num_iterations_ = v; }
+
+    int estimateExtrinsic() const { return estimate_extrinsic_; }
+    void setEstimateExtrinsic(int v) { estimate_extrinsic_ = v; }
+
+    int estimateTd() const { return estimate_td_; }
+    void setEstimateTd(int v) { estimate_td_ = v; }
+
+    int rollingShutter() const { return rolling_shutter_; }
+    void setRollingShutter(int v) { rolling_shutter_ = v; }
+
+    const std::string &exCalibResultPath() const { return ex_calib_result_path_; }
+    void setExCalibResultPath(std::string v) { ex_calib_result_path_ = std::move(v); }
+
+    const std::string &vinsResultPath() const { return vins_result_path_; }
+    void setVinsResultPath(std::string v) { vins_result_path_ = std::move(v); }
+
+    const std::string &imuTopic() const { return imu_topic_; }
+    void setImuTopic(std::string v) { imu_topic_ = std::move(v); }
+
+    double imageRow() const { return row_; }
+    void setImageRow(double v) { row_ = v; }
+
+    double imageCol() const { return col_; }
+    void setImageCol(double v) { col_ = v; }
+
+    double td() const { return td_; }
+    void setTd(double v) { td_ = v; }
+
+    double rollingShutterTr() const { return tr_; }
+    void setRollingShutterTr(double v) { tr_ = v; }
+
+  private:
+    double init_depth_ = 5.0;
+    double min_parallax_ = 0.0;
+    double acc_n_ = 0.0;
+    double acc_w_ = 0.0;
+    double gyr_n_ = 0.0;
+    double gyr_w_ = 0.0;
+    std::vector<Eigen::Matrix3d> ric_;
+    std::vector<Eigen::Vector3d> tic_;
+    Eigen::Vector3d gravity_{0.0, 0.0, 9.8};
+    double bias_acc_threshold_ = 0.1;
+    double bias_gyr_threshold_ = 0.1;
+    double solver_time_ = 0.0;
+    int num_iterations_ = 0;
+    int estimate_extrinsic_ = 0;
+    int estimate_td_ = 0;
+    int rolling_shutter_ = 0;
+    std::string ex_calib_result_path_;
+    std::string vins_result_path_;
+    std::string imu_topic_;
+    double row_ = 0.0;
+    double col_ = 0.0;
+    double td_ = 0.0;
+    double tr_ = 0.0;
+};
+
+inline VinsParameters &vinsParameters() { return VinsParameters::instance(); }
 
 void readParameters(const std::string &config_file);
 

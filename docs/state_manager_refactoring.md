@@ -136,7 +136,7 @@ struct ImageFrameInput {
 |------|------|--------------------------|
 | `solver_flag` | `SolverFlag` | 控制 INITIAL / NON_LINEAR 阶段分支，属于编排逻辑 |
 | `marginalization_flag` | `MarginalizationFlag` | 由 `processImage` 根据视差决策，驱动 `slideWindow` 分支 |
-| `g` | `Vector3d` | 来自配置文件的全局常量；VINS-Mono 中不估计重力，仅需在 `processIMU` / 预积分构造时**只读传入** StateManager |
+| `g` | `Vector3d` | 启动时从 `vinsParameters().gravity()` 拷贝；VINS-Mono 中不估计重力，仅需在 `processIMU` / 预积分构造时**只读传入** StateManager |
 | `first_imu` | `bool` | `processIMU` 首包检测，纯控制流 |
 | `failure_occur` | `bool` | 连接 `failureDetection` 与 `double2vector` 重启逻辑，非窗口状态 |
 | `initial_timestamp` | `double` | 系统级时间原点，与单帧 `header.stamp` 不同层级 |
@@ -289,7 +289,7 @@ public:
 | 接口 | 对应现有逻辑 | 说明 |
 |------|-------------|------|
 | `clear()` | `Estimator::clearState()` 中的状态部分 | 清空窗口、预积分、边缘化 prior；**不**重置 `solver_flag` 等（由 Estimator 负责） |
-| `initFromConfig()` | `setParameter()` 中的 `ric/tic/td` 部分 | 从 `RIC/TIC/TD` 加载 |
+| `initFromConfig()` | `setParameter()` 中的 `ric/tic/td` 部分 | 从 `vinsParameters().ric()/tic()/td()` 加载 |
 
 失败重启时 Estimator 依次调用 `state_.clear()`、`state_.initFromConfig()`，并自行重置 `solver_flag = INITIAL`、`failure_occur = false` 等。
 
@@ -405,7 +405,7 @@ const ExtrinsicState& extrinsic(int cam_id) const;
 ExtrinsicState&       extrinsic(int cam_id);
 
 void setExtrinsic(int cam_id, const Matrix3d& ric, const Vector3d& tic);
-void setExtrinsicsFromConfig();   // 从 RIC/TIC 全局变量加载
+void setExtrinsicsFromConfig();   // 从 vinsParameters().ric()/tic() 加载
 
 double timeDelay() const;
 void   setTimeDelay(double td);
@@ -686,6 +686,61 @@ CMakeLists.txt 中为 `vins_estimator` target 添加 `state_manager.cpp`。
 
 ---
 
+## 十二、VinsParameters 配置访问（2026-05）
+
+原 `parameters.h` 中 `extern` 全局变量（`RIC`、`TD`、`ACC_N` 等）已收敛为单例 **`VinsParameters`**，业务代码**禁止**直接读写全局符号，统一通过 getter/setter 或 `readParameters()` 加载。
+
+### 12.1 入口
+
+```cpp
+#include "parameters.h"
+
+readParameters(config_path);           // 解析 YAML → 写入 VinsParameters
+auto &cfg = vinsParameters();        // 运行期只读/可写访问
+```
+
+`VinsParameters::loadFromConfig()` 与 `readParameters()` 等价；单元测试可用 setter 注入，无需配置文件。
+
+### 12.2 字段与 YAML 映射
+
+| Getter / Setter | YAML 键（节选） | 用途 |
+|-----------------|-----------------|------|
+| `imuTopic()` | `imu_topic` | 话题名（适配层） |
+| `solverTime()` | `max_solver_time` | Ceres 单轮最大耗时 |
+| `numIterations()` | `max_num_iterations` | Ceres 最大迭代次数 |
+| `minParallax()` | `keyframe_parallax` / `FOCAL_LENGTH` | 关键帧视差阈值 |
+| `accNoise()` / `accRandomWalk()` | `acc_n` / `acc_w` | IMU 噪声（预积分 `noise` 矩阵） |
+| `gyrNoise()` / `gyrRandomWalk()` | `gyr_n` / `gyr_w` | 陀螺噪声 |
+| `gravity()` / `setGravityNorm()` | `g_norm` | 重力模长（IMU 因子、Estimator::g） |
+| `ric()` / `tic()` / `addExtrinsic()` | `extrinsicRotation` / `extrinsicTranslation` | 相机–IMU 外参初值 |
+| `estimateExtrinsic()` | `estimate_extrinsic` | 0 固定 / 1 优化 / 2 无先验 |
+| `td()` / `estimateTd()` | `td` / `estimate_td` | 时间偏移初值及是否优化 |
+| `rollingShutter()` / `rollingShutterTr()` | `rolling_shutter` / `rolling_shutter_tr` | 卷帘快门（`ProjectionFactor` 补偿） |
+| `imageRow()` / `imageCol()` | `image_height` / `image_width` | 图像尺寸 |
+| `initDepth()` | （代码内默认 5.0） | 特征深度初值 |
+| `vinsResultPath()` / `exCalibResultPath()` | `output_path` 派生 | 结果/外参输出路径 |
+
+外参容器：`clearExtrinsics()` + `addExtrinsic(R, T)` 在 `loadFromConfig` 内按 `estimate_extrinsic` 分支填充。
+
+### 12.3 主要调用点
+
+| 模块 | 访问方式 |
+|------|----------|
+| `StateManager::initFromConfig` | `vinsParameters().ric()[i]`、`tic()[i]`、`td()` |
+| `Estimator::setParameter` / `clearState` | `vinsParameters().gravity()` → 成员 `g` |
+| `Estimator::optimization` | `estimateExtrinsic()`、`estimateTd()`、`solverTime()`、`numIterations()` |
+| `Integrator` / `IMUFactor` | `accNoise()`、`gravity()` 等 |
+| `ProjectionFactor` | `imageRow()`、`rollingShutterTr()` |
+| `FeatureManager` | `minParallax()`、`initDepth()` |
+
+### 12.4 迁移约定
+
+1. **新代码**只使用 `vinsParameters().xxx()`，不新增 `extern` 全局量。
+2. **测试**通过 setter 配置（见 `tests/imu_factor_test.cpp`、`tests/projection_factor_test.cpp`）。
+3. `FOCAL_LENGTH`、`WINDOW_SIZE` 等编译期常量仍保留在 `parameters.h`，不属于 `VinsParameters`。
+
+---
+
 ## 十、开放问题
 
 1. **`para_Feature` 归属**：是否由 `FeatureManager` 持有，`StateManager` 只提供指针？建议 Phase 2 先保留在 `StateManager`，通过 `FeatureManager::getDepthVector()` 协作。
@@ -750,6 +805,7 @@ CMakeLists.txt 中为 `vins_estimator` target 添加 `state_manager.cpp`。
 | **§十-6** `FeatureManager::start_frame` → `FrameId` | ✅（语义澄清） | 重命名为 `start_slot`（窗口槽位，非 `FrameId`） |
 | **§十-1** `para_Feature` 归属 | ✅ | 暂留 `StateManager`，与 `FeatureManager::getDepthVector` 协作 |
 | **ROS 主路径** `vins_estimator` catkin 目标 | ⚠️ 未在本仓库验证 | standalone 路径已覆盖核心状态机 |
+| **§十二** `VinsParameters` getter/setter | ✅ | 替代 `extern` 全局；见 `parameters.h/.cpp` |
 
 ### 验证记录
 

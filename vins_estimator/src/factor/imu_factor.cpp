@@ -46,13 +46,14 @@ Integrator::Integrator(const Eigen::Vector3d &_acc_0, const Eigen::Vector3d &_gy
       sum_dt{0.0}, delta_p{Eigen::Vector3d::Zero()},
       delta_q{Eigen::Quaterniond::Identity()}, delta_v{Eigen::Vector3d::Zero()}
 {
+    const auto &params = vinsParameters();
     noise = Eigen::Matrix<double, 18, 18>::Zero();
-    noise.block<3, 3>(0, 0) = (ACC_N * ACC_N) * Eigen::Matrix3d::Identity();
-    noise.block<3, 3>(3, 3) = (GYR_N * GYR_N) * Eigen::Matrix3d::Identity();
-    noise.block<3, 3>(6, 6) = (ACC_N * ACC_N) * Eigen::Matrix3d::Identity();
-    noise.block<3, 3>(9, 9) = (GYR_N * GYR_N) * Eigen::Matrix3d::Identity();
-    noise.block<3, 3>(12, 12) = (ACC_W * ACC_W) * Eigen::Matrix3d::Identity();
-    noise.block<3, 3>(15, 15) = (GYR_W * GYR_W) * Eigen::Matrix3d::Identity();
+    noise.block<3, 3>(0, 0) = (params.accNoise() * params.accNoise()) * Eigen::Matrix3d::Identity();
+    noise.block<3, 3>(3, 3) = (params.gyrNoise() * params.gyrNoise()) * Eigen::Matrix3d::Identity();
+    noise.block<3, 3>(6, 6) = (params.accNoise() * params.accNoise()) * Eigen::Matrix3d::Identity();
+    noise.block<3, 3>(9, 9) = (params.gyrNoise() * params.gyrNoise()) * Eigen::Matrix3d::Identity();
+    noise.block<3, 3>(12, 12) = (params.accRandomWalk() * params.accRandomWalk()) * Eigen::Matrix3d::Identity();
+    noise.block<3, 3>(15, 15) = (params.gyrRandomWalk() * params.gyrRandomWalk()) * Eigen::Matrix3d::Identity();
 }
 
 void Integrator::process(double dt, const Eigen::Vector3d &acc, const Eigen::Vector3d &gyr)
@@ -208,9 +209,11 @@ Eigen::Matrix<double, 15, 1> Integrator::computeResidual(
     Eigen::Vector3d corrected_delta_v = delta_v + dv_dba * dba + dv_dbg * dbg;
     Eigen::Vector3d corrected_delta_p = delta_p + dp_dba * dba + dp_dbg * dbg;
 
-    residuals.block<3, 1>(O_P, 0) = Qi.inverse() * (0.5 * G * sum_dt * sum_dt + Pj - Pi - Vi * sum_dt) - corrected_delta_p;
+    const Eigen::Vector3d &gravity = vinsParameters().gravity();
+    residuals.block<3, 1>(O_P, 0) =
+        Qi.inverse() * (0.5 * gravity * sum_dt * sum_dt + Pj - Pi - Vi * sum_dt) - corrected_delta_p;
     residuals.block<3, 1>(O_R, 0) = 2 * (corrected_delta_q.inverse() * (Qi.inverse() * Qj)).vec();
-    residuals.block<3, 1>(O_V, 0) = Qi.inverse() * (G * sum_dt + Vj - Vi) - corrected_delta_v;
+    residuals.block<3, 1>(O_V, 0) = Qi.inverse() * (gravity * sum_dt + Vj - Vi) - corrected_delta_v;
     residuals.block<3, 1>(O_BA, 0) = Baj - Bai;
     residuals.block<3, 1>(O_BG, 0) = Bgj - Bgi;
     return residuals;
@@ -265,19 +268,20 @@ bool IMUFactor::Evaluate(double const *const *parameters, double *residuals, dou
         // jacobians[0]: pose i.
         if (jacobians[0])
         {
+            const Eigen::Vector3d &gravity = vinsParameters().gravity();
             Eigen::Map<Eigen::Matrix<double, 15, 7, Eigen::RowMajor>> jacobian_pose_i(jacobians[0]);
             jacobian_pose_i.setZero();
 
             jacobian_pose_i.block<3, 3>(O_P, O_P) = -Qi.inverse().toRotationMatrix();
             jacobian_pose_i.block<3, 3>(O_P, O_R) =
-                Utility::skewSymmetric(Qi.inverse() * (0.5 * G * sum_dt * sum_dt + Pj - Pi - Vi * sum_dt));
+                Utility::skewSymmetric(Qi.inverse() * (0.5 * gravity * sum_dt * sum_dt + Pj - Pi - Vi * sum_dt));
 
             Eigen::Quaterniond corrected_delta_q =
                 pre_integration_->delta_q * Utility::deltaQ(dq_dbg * (Bgi - pre_integration_->linearized_bg));
             jacobian_pose_i.block<3, 3>(O_R, O_R) =
                 -(Utility::Qleft(Qj.inverse() * Qi) * Utility::Qright(corrected_delta_q)).bottomRightCorner<3, 3>();
 
-            jacobian_pose_i.block<3, 3>(O_V, O_R) = Utility::skewSymmetric(Qi.inverse() * (G * sum_dt + Vj - Vi));
+            jacobian_pose_i.block<3, 3>(O_V, O_R) = Utility::skewSymmetric(Qi.inverse() * (gravity * sum_dt + Vj - Vi));
 
             jacobian_pose_i = sqrt_info * jacobian_pose_i;
 

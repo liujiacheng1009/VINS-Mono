@@ -71,8 +71,8 @@ ProjectionFactor::ProjectionFactor(const Eigen::Vector3d &_pts_i, const Eigen::V
 
     velocity_i << _velocity_i.x(), _velocity_i.y(), 0.0;
     velocity_j << _velocity_j.x(), _velocity_j.y(), 0.0;
-    row_i = _row_i - ROW / 2.0;
-    row_j = _row_j - ROW / 2.0;
+    row_i = _row_i - vinsParameters().imageRow() / 2.0;
+    row_j = _row_j - vinsParameters().imageRow() / 2.0;
 
     tangent_base.setZero();
 #ifdef UNIT_SPHERE_ERROR
@@ -95,9 +95,13 @@ bool ProjectionFactor::Evaluate(double const *const *parameters, double *residua
     const double td = estimate_td ? parameters[4][0] : 0.0;
 
     const Eigen::Vector3d pts_i_td =
-        estimate_td ? pts_i - (td - td_i + TR / ROW * row_i) * velocity_i : pts_i;
+        estimate_td ? pts_i - (td - td_i + vinsParameters().rollingShutterTr() / vinsParameters().imageRow() * row_i) *
+                                  velocity_i
+                    : pts_i;
     const Eigen::Vector3d pts_j_td =
-        estimate_td ? pts_j - (td - td_j + TR / ROW * row_j) * velocity_j : pts_j;
+        estimate_td ? pts_j - (td - td_j + vinsParameters().rollingShutterTr() / vinsParameters().imageRow() * row_j) *
+                                  velocity_j
+                    : pts_j;
     const Eigen::Vector3d pts_camera_i = pts_i_td / inv_dep_i;
     const Eigen::Vector3d pts_imu_i    = qic * pts_camera_i + tic;
     const Eigen::Vector3d pts_w        = Qi * pts_imu_i + Pi;

@@ -708,7 +708,11 @@ auto &cfg = vinsParameters();        // 运行期只读/可写访问
 | `imuTopic()` | `imu_topic` | 话题名（适配层） |
 | `solverTime()` | `max_solver_time` | Ceres 单轮最大耗时 |
 | `numIterations()` | `max_num_iterations` | Ceres 最大迭代次数 |
-| `minParallax()` | `keyframe_parallax` / `FOCAL_LENGTH` | 关键帧视差阈值 |
+| `minParallax()` | `keyframe_parallax` / `focal_length` | 关键帧视差阈值 |
+| `windowSize()` | `window_size` | 滑动窗口帧数（`StateManager` 槽位 0…N） |
+| `numOfCam()` | `num_of_cam` | 相机数量 |
+| `maxFeatureCount()` | `max_feature_count` | 路标 Ceres 参数池上限 |
+| `focalLength()` | `focal_length` | 焦距（视差归一化、`ProjectionFactor::sqrt_info`） |
 | `accNoise()` / `accRandomWalk()` | `acc_n` / `acc_w` | IMU 噪声（预积分 `noise` 矩阵） |
 | `gyrNoise()` / `gyrRandomWalk()` | `gyr_n` / `gyr_w` | 陀螺噪声 |
 | `gravity()` / `setGravityNorm()` | `g_norm` | 重力模长（IMU 因子、Estimator::g） |
@@ -737,7 +741,7 @@ auto &cfg = vinsParameters();        // 运行期只读/可写访问
 
 1. **新代码**只使用 `vinsParameters().xxx()`，不新增 `extern` 全局量。
 2. **测试**通过 setter 配置（见 `tests/imu_factor_test.cpp`、`tests/projection_factor_test.cpp`）。
-3. `FOCAL_LENGTH`、`WINDOW_SIZE` 等编译期常量仍保留在 `parameters.h`，不属于 `VinsParameters`。
+3. **布局参数**（`window_size`、`num_of_cam`、`max_feature_count`、`focal_length`）在 `readParameters()` 之后生效；`StateManager::allocateStorage()` 按当前 `VinsParameters` 分配向量容量。**须在创建/清空 Estimator 之前**完成 `readParameters()`，运行中改窗口大小需 `clearState()` 重建存储。
 
 ---
 

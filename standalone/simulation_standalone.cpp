@@ -78,8 +78,8 @@ int main(int argc, char **argv)
                 for (const auto &id_pts : raw_features)
                 {
                     const int packed_id = id_pts.first;
-                    const int feature_id = packed_id / NUM_OF_CAM;
-                    const int camera_id = packed_id % NUM_OF_CAM;
+                    const int feature_id = packed_id / numOfCam();
+                    const int camera_id = packed_id % numOfCam();
                     const double x = id_pts.second.x();
                     const double y = id_pts.second.y();
                     const double z = id_pts.second.z();
@@ -104,14 +104,14 @@ int main(int argc, char **argv)
 
                 if (estimator.solver_flag == Estimator::SolverFlag::NON_LINEAR)
                 {
-                    const auto &p = estimator.state_.positionAtSlot(WINDOW_SIZE);
+                    const auto &p = estimator.state_.positionAtSlot(estimator.state_.latestSlot());
                     const Eigen::Matrix3d gt_rotation = generator.getRotation();
                     const double raw_err = (p - gt_position).norm();
                     abs_pos_errors_raw.push_back(raw_err);
 
                     if (!has_align_transform)
                     {
-                        align_rotation = gt_rotation * estimator.state_.rotationAtSlot(WINDOW_SIZE).transpose();
+                        align_rotation = gt_rotation * estimator.state_.rotationAtSlot(estimator.state_.latestSlot()).transpose();
                         align_translation = gt_position - align_rotation * p;
                         has_align_transform = true;
                     }
@@ -120,13 +120,13 @@ int main(int argc, char **argv)
                     abs_pos_errors_aligned.push_back(aligned_err);
 
                     const Eigen::Vector3d gt_vel_world = gt_rotation * generator.getVelocity();
-                    const auto &v = estimator.state_.velocityAtSlot(WINDOW_SIZE);
+                    const auto &v = estimator.state_.velocityAtSlot(estimator.state_.latestSlot());
                     abs_vel_errors.push_back((v - gt_vel_world).norm());
 
-                    const Eigen::Vector3d ypr = Utility::R2ypr(estimator.state_.rotationAtSlot(WINDOW_SIZE));
+                    const Eigen::Vector3d ypr = Utility::R2ypr(estimator.state_.rotationAtSlot(estimator.state_.latestSlot()));
                     const Eigen::Vector3d gt_ypr = Utility::R2ypr(gt_rotation);
-                    const auto &ba = estimator.state_.accBiasAtSlot(WINDOW_SIZE);
-                    const auto &bg = estimator.state_.gyrBiasAtSlot(WINDOW_SIZE);
+                    const auto &ba = estimator.state_.accBiasAtSlot(estimator.state_.latestSlot());
+                    const auto &bg = estimator.state_.gyrBiasAtSlot(estimator.state_.latestSlot());
                     const Eigen::Vector3d gt_ba = generator.getAccelerometerBias();
                     const Eigen::Vector3d gt_bg = generator.getGyroscopeBias();
                     LOG_VALUE("p", p.x(), p.y(), p.z());

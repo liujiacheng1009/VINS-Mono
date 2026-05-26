@@ -71,7 +71,7 @@ class FeatureManager
   public:
     FeatureManager();
 
-    void setRic(Matrix3d _ric[]);
+    void setRic(const std::vector<Matrix3d> &ric);
 
     void clearState();
 
@@ -96,7 +96,7 @@ class FeatureManager
 
   private:
     double compensatedParallax2(const FeaturePerId &it_per_id, int frame_count);
-    Matrix3d ric[NUM_OF_CAM];
+    std::vector<Matrix3d> ric_;
 };
 
 #endif

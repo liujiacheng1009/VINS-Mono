@@ -10,17 +10,17 @@ Estimator::Estimator()
 void Estimator::setParameter()
 {
     state_.initFromConfig();
-    Matrix3d ric[NUM_OF_CAM];
+    std::vector<Matrix3d> ric;
     state_.copyExtrinsicRotations(ric);
     f_manager.setRic(ric);
-    ProjectionFactor::sqrt_info = FOCAL_LENGTH / 1.5 * Matrix2d::Identity();
+    ProjectionFactor::sqrt_info = focalLength() / 1.5 * Matrix2d::Identity();
     g = vinsParameters().gravity();
 }
 
 void Estimator::initializeWithGroundTruth(double t, const Vector3d &P, const Matrix3d &R, const Vector3d &V,
                                           const Vector3d &acc, const Vector3d &gyr)
 {
-    const int idx = std::min(state_.slotCount(), WINDOW_SIZE);
+    const int idx = std::min(state_.slotCount(), state_.windowSize());
     SimpleHeader header;
     header.stamp = SimpleTime(t);
     header.frame_id = "world";
@@ -43,7 +43,7 @@ void Estimator::clearState()
     g = vinsParameters().gravity();
 
     state_.initFromConfig();
-    Matrix3d ric[NUM_OF_CAM];
+    std::vector<Matrix3d> ric;
     state_.copyExtrinsicRotations(ric);
     f_manager.setRic(ric);
     f_manager.clearState();
@@ -108,7 +108,7 @@ void Estimator::processImage(const ImageFrameInput &input)
 
     if (solver_flag == INITIAL)
     {
-        if (slot == WINDOW_SIZE)
+        if (slot == state_.windowSize())
         {
             solver_flag = NON_LINEAR;
             solveOdometry();
@@ -157,7 +157,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
 
 void Estimator::solveOdometry()
 {
-    if (state_.slotCount() < WINDOW_SIZE)
+    if (state_.slotCount() < state_.windowSize())
         return;
     if (solver_flag == NON_LINEAR)
     {
@@ -199,18 +199,18 @@ bool Estimator::failureDetection()
     {
         ROS_INFO(" little feature %d", f_manager.last_track_num);
     }
-    if (state_.accBiasAtSlot(WINDOW_SIZE).norm() > 2.5)
+    if (state_.accBiasAtSlot(state_.windowSize()).norm() > 2.5)
     {
-        ROS_INFO(" big IMU acc bias estimation %f", state_.accBiasAtSlot(WINDOW_SIZE).norm());
+        ROS_INFO(" big IMU acc bias estimation %f", state_.accBiasAtSlot(state_.windowSize()).norm());
         return true;
     }
-    if (state_.gyrBiasAtSlot(WINDOW_SIZE).norm() > 1.0)
+    if (state_.gyrBiasAtSlot(state_.windowSize()).norm() > 1.0)
     {
-        ROS_INFO(" big IMU gyr bias estimation %f", state_.gyrBiasAtSlot(WINDOW_SIZE).norm());
+        ROS_INFO(" big IMU gyr bias estimation %f", state_.gyrBiasAtSlot(state_.windowSize()).norm());
         return true;
     }
 
-    const Vector3d tmp_P = state_.positionAtSlot(WINDOW_SIZE);
+    const Vector3d tmp_P = state_.positionAtSlot(state_.windowSize());
     if ((tmp_P - state_.lastPosition()).norm() > 5)
     {
         ROS_INFO(" big translation");
@@ -221,7 +221,7 @@ bool Estimator::failureDetection()
         ROS_INFO(" big z translation");
         return true;
     }
-    const Matrix3d tmp_R = state_.rotationAtSlot(WINDOW_SIZE);
+    const Matrix3d tmp_R = state_.rotationAtSlot(state_.windowSize());
     Matrix3d delta_R = tmp_R.transpose() * state_.lastRotation();
     Quaterniond delta_Q(delta_R);
     double delta_angle = acos(delta_Q.w()) * 2.0 / 3.14 * 180.0;
@@ -236,13 +236,13 @@ void Estimator::optimization()
 {
     ceres::Problem problem;
     ceres::LossFunction *loss_function = new ceres::CauchyLoss(1.0);
-    for (int i = 0; i < WINDOW_SIZE + 1; i++)
+    for (int i = 0; i < state_.windowSize() + 1; i++)
     {
         ceres::LocalParameterization *local_parameterization = new PoseLocalParameterization();
         problem.AddParameterBlock(state_.poseParameter(i), SIZE_POSE, local_parameterization);
         problem.AddParameterBlock(state_.speedBiasParameter(i), SIZE_SPEEDBIAS);
     }
-    for (int i = 0; i < NUM_OF_CAM; i++)
+    for (int i = 0; i < numOfCam(); i++)
     {
         ceres::LocalParameterization *local_parameterization = new PoseLocalParameterization();
         problem.AddParameterBlock(state_.extrinsicParameter(i), SIZE_POSE, local_parameterization);
@@ -264,7 +264,7 @@ void Estimator::optimization()
         problem.AddResidualBlock(marginalization_factor, NULL, last_marginalization_parameter_blocks);
     }
 
-    for (int i = 0; i < WINDOW_SIZE; i++)
+    for (int i = 0; i < state_.windowSize(); i++)
     {
         int j = i + 1;
         auto &pre_int = state_.preIntegrationAtSlot(j);
@@ -280,7 +280,7 @@ void Estimator::optimization()
     for (auto &it_per_id : f_manager.feature)
     {
         it_per_id.used_num = it_per_id.feature_per_frame.size();
-        if (!(it_per_id.used_num >= 2 && it_per_id.start_slot < WINDOW_SIZE - 2))
+        if (!(it_per_id.used_num >= 2 && it_per_id.start_slot < state_.windowSize() - 2))
             continue;
 
         ++feature_index;
@@ -374,7 +374,7 @@ void Estimator::optimization()
             for (auto &it_per_id : f_manager.feature)
             {
                 it_per_id.used_num = it_per_id.feature_per_frame.size();
-                if (!(it_per_id.used_num >= 2 && it_per_id.start_slot < WINDOW_SIZE - 2))
+                if (!(it_per_id.used_num >= 2 && it_per_id.start_slot < state_.windowSize() - 2))
                     continue;
 
                 ++feature_index_margin;
@@ -429,13 +429,13 @@ void Estimator::optimization()
         ROS_DEBUG("marginalization %f ms", t_margin.toc());
 
         std::unordered_map<ParameterBlockId, double *> addr_shift;
-        for (int i = 1; i <= WINDOW_SIZE; i++)
+        for (int i = 1; i <= state_.windowSize(); i++)
         {
             addr_shift[reinterpret_cast<ParameterBlockId>(state_.poseParameter(i))] = state_.poseParameter(i - 1);
             addr_shift[reinterpret_cast<ParameterBlockId>(state_.speedBiasParameter(i))] =
                 state_.speedBiasParameter(i - 1);
         }
-        for (int i = 0; i < NUM_OF_CAM; i++)
+        for (int i = 0; i < numOfCam(); i++)
             addr_shift[reinterpret_cast<ParameterBlockId>(state_.extrinsicParameter(i))] = state_.extrinsicParameter(i);
         if (vinsParameters().estimateTd())
             addr_shift[reinterpret_cast<ParameterBlockId>(state_.timeDelayParameter())] = state_.timeDelayParameter();
@@ -451,7 +451,7 @@ void Estimator::optimization()
     {
         if (last_marginalization_info &&
             std::count(std::begin(last_marginalization_parameter_blocks), std::end(last_marginalization_parameter_blocks),
-                       state_.poseParameter(WINDOW_SIZE - 1)))
+                       state_.poseParameter(state_.windowSize() - 1)))
         {
             MarginalizationInfo *marginalization_info = new MarginalizationInfo();
             syncStateToParameters();
@@ -460,8 +460,8 @@ void Estimator::optimization()
                 vector<int> drop_set;
                 for (int i = 0; i < static_cast<int>(last_marginalization_parameter_blocks.size()); i++)
                 {
-                    ROS_ASSERT(last_marginalization_parameter_blocks[i] != state_.speedBiasParameter(WINDOW_SIZE - 1));
-                    if (last_marginalization_parameter_blocks[i] == state_.poseParameter(WINDOW_SIZE - 1))
+                    ROS_ASSERT(last_marginalization_parameter_blocks[i] != state_.speedBiasParameter(state_.windowSize() - 1));
+                    if (last_marginalization_parameter_blocks[i] == state_.poseParameter(state_.windowSize() - 1))
                         drop_set.push_back(i);
                 }
                 MarginalizationFactor *marginalization_factor = new MarginalizationFactor(last_marginalization_info);
@@ -476,11 +476,11 @@ void Estimator::optimization()
             marginalization_info->marginalize();
 
             std::unordered_map<ParameterBlockId, double *> addr_shift;
-            for (int i = 0; i <= WINDOW_SIZE; i++)
+            for (int i = 0; i <= state_.windowSize(); i++)
             {
-                if (i == WINDOW_SIZE - 1)
+                if (i == state_.windowSize() - 1)
                     continue;
-                else if (i == WINDOW_SIZE)
+                else if (i == state_.windowSize())
                 {
                     addr_shift[reinterpret_cast<ParameterBlockId>(state_.poseParameter(i))] = state_.poseParameter(i - 1);
                     addr_shift[reinterpret_cast<ParameterBlockId>(state_.speedBiasParameter(i))] =
@@ -493,7 +493,7 @@ void Estimator::optimization()
                         state_.speedBiasParameter(i);
                 }
             }
-            for (int i = 0; i < NUM_OF_CAM; i++)
+            for (int i = 0; i < numOfCam(); i++)
                 addr_shift[reinterpret_cast<ParameterBlockId>(state_.extrinsicParameter(i))] =
                     state_.extrinsicParameter(i);
             if (vinsParameters().estimateTd())
@@ -515,7 +515,7 @@ void Estimator::slideWindow()
 {
     const auto mode = (marginalization_flag == MARGIN_OLD) ? StateManager::SlideMode::MARGIN_OLD
                                                          : StateManager::SlideMode::MARGIN_SECOND_NEW;
-    state_.slideWindow(mode, acc_0, gyr_0, state_.accBiasAtSlot(WINDOW_SIZE), state_.gyrBiasAtSlot(WINDOW_SIZE));
+    state_.slideWindow(mode, acc_0, gyr_0, state_.accBiasAtSlot(state_.windowSize()), state_.gyrBiasAtSlot(state_.windowSize()));
     if (marginalization_flag == MARGIN_OLD)
         slideWindowOld();
     else

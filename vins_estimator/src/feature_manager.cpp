@@ -8,16 +8,12 @@ int FeaturePerId::endFrame()
 
 FeatureManager::FeatureManager()
 {
-    for (int i = 0; i < NUM_OF_CAM; i++)
-        ric[i].setIdentity();
+    ric_.assign(numOfCam(), Matrix3d::Identity());
 }
 
-void FeatureManager::setRic(Matrix3d _ric[])
+void FeatureManager::setRic(const std::vector<Matrix3d> &ric)
 {
-    for (int i = 0; i < NUM_OF_CAM; i++)
-    {
-        ric[i] = _ric[i];
-    }
+    ric_ = ric;
 }
 
 void FeatureManager::clearState()
@@ -33,7 +29,7 @@ int FeatureManager::getFeatureCount()
 
         it.used_num = it.feature_per_frame.size();
 
-        if (it.used_num >= 2 && it.start_slot < WINDOW_SIZE - 2)
+        if (it.used_num >= 2 && it.start_slot < windowSize() - 2)
         {
             cnt++;
         }
@@ -91,7 +87,7 @@ bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vec
     else
     {
         ROS_DEBUG("parallax_sum: %lf, parallax_num: %d", parallax_sum, parallax_num);
-        ROS_DEBUG("current parallax: %lf", parallax_sum / parallax_num * FOCAL_LENGTH);
+        ROS_DEBUG("current parallax: %lf", parallax_sum / parallax_num * focalLength());
         return parallax_sum / parallax_num >= vinsParameters().minParallax();
     }
 }
@@ -144,7 +140,7 @@ void FeatureManager::setDepth(const VectorXd &x)
     for (auto &it_per_id : feature)
     {
         it_per_id.used_num = it_per_id.feature_per_frame.size();
-        if (!(it_per_id.used_num >= 2 && it_per_id.start_slot < WINDOW_SIZE - 2))
+        if (!(it_per_id.used_num >= 2 && it_per_id.start_slot < windowSize() - 2))
             continue;
 
         it_per_id.estimated_depth = 1.0 / x(++feature_index);
@@ -175,7 +171,7 @@ void FeatureManager::clearDepth(const VectorXd &x)
     for (auto &it_per_id : feature)
     {
         it_per_id.used_num = it_per_id.feature_per_frame.size();
-        if (!(it_per_id.used_num >= 2 && it_per_id.start_slot < WINDOW_SIZE - 2))
+        if (!(it_per_id.used_num >= 2 && it_per_id.start_slot < windowSize() - 2))
             continue;
         it_per_id.estimated_depth = 1.0 / x(++feature_index);
     }
@@ -188,7 +184,7 @@ VectorXd FeatureManager::getDepthVector()
     for (auto &it_per_id : feature)
     {
         it_per_id.used_num = it_per_id.feature_per_frame.size();
-        if (!(it_per_id.used_num >= 2 && it_per_id.start_slot < WINDOW_SIZE - 2))
+        if (!(it_per_id.used_num >= 2 && it_per_id.start_slot < windowSize() - 2))
             continue;
 #if 1
         dep_vec(++feature_index) = 1. / it_per_id.estimated_depth;
@@ -205,14 +201,14 @@ void FeatureManager::triangulate(StateManager &state)
     for (auto &it_per_id : feature)
     {
         it_per_id.used_num = it_per_id.feature_per_frame.size();
-        if (!(it_per_id.used_num >= 2 && it_per_id.start_slot < WINDOW_SIZE - 2))
+        if (!(it_per_id.used_num >= 2 && it_per_id.start_slot < windowSize() - 2))
             continue;
 
         if (it_per_id.estimated_depth > 0)
             continue;
         int imu_i = it_per_id.start_slot, imu_j = imu_i - 1;
 
-        ROS_ASSERT(NUM_OF_CAM == 1);
+        ROS_ASSERT(numOfCam() >= 1);
         Eigen::MatrixXd svd_A(2 * it_per_id.feature_per_frame.size(), 4);
         int svd_idx = 0;
 
@@ -305,7 +301,7 @@ void FeatureManager::removeBackShiftDepth(Eigen::Matrix3d marg_R, Eigen::Vector3
         }
         // remove tracking-lost feature after marginalize
         /*
-        if (it->endFrame() < WINDOW_SIZE - 1)
+        if (it->endFrame() < windowSize() - 1)
         {
             feature.erase(it);
         }
@@ -343,7 +339,7 @@ void FeatureManager::removeFront(int frame_count)
         }
         else
         {
-            int j = WINDOW_SIZE - 1 - it->start_slot;
+            int j = windowSize() - 1 - it->start_slot;
             if (it->endFrame() < frame_count - 1)
                 continue;
             it->feature_per_frame.erase(it->feature_per_frame.begin() + j);

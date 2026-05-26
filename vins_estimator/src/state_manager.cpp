@@ -7,28 +7,35 @@ StateManager::StateManager()
     clear();
 }
 
+void StateManager::allocateStorage()
+{
+    window_size_ = vinsParameters().windowSize();
+    const int num_cam = vinsParameters().numOfCam();
+    const int max_feat = vinsParameters().maxFeatureCount();
+    const int n_slots = window_size_ + 1;
+
+    frame_ids_.assign(n_slots, kInvalidFrameId);
+    Ps_.assign(n_slots, Vector3d::Zero());
+    Vs_.assign(n_slots, Vector3d::Zero());
+    Rs_.assign(n_slots, Matrix3d::Identity());
+    Bas_.assign(n_slots, Vector3d::Zero());
+    Bgs_.assign(n_slots, Vector3d::Zero());
+    Headers_.assign(n_slots, SimpleHeader{});
+    imu_data_.assign(n_slots, FrameImuData{});
+
+    ric_.assign(num_cam, Matrix3d::Identity());
+    tic_.assign(num_cam, Vector3d::Zero());
+
+    para_pose_.assign(n_slots, {});
+    para_speed_bias_.assign(n_slots, {});
+    para_ex_pose_.assign(num_cam, {});
+    para_feature_.assign(max_feat, {});
+    para_td_ = {0.0};
+}
+
 void StateManager::clear()
 {
-    for (int i = 0; i < WINDOW_SIZE + 1; i++)
-    {
-        Rs_[i].setIdentity();
-        Ps_[i].setZero();
-        Vs_[i].setZero();
-        Bas_[i].setZero();
-        Bgs_[i].setZero();
-        Headers_[i] = SimpleHeader{};
-        frame_ids_[i] = kInvalidFrameId;
-        imu_data_[i].dt_buf.clear();
-        imu_data_[i].linear_acceleration_buf.clear();
-        imu_data_[i].angular_velocity_buf.clear();
-        imu_data_[i].pre_integration.reset();
-    }
-
-    for (int i = 0; i < NUM_OF_CAM; i++)
-    {
-        tic_[i].setZero();
-        ric_[i].setIdentity();
-    }
+    allocateStorage();
 
     slot_count_ = 0;
     id_to_slot_.clear();
@@ -46,24 +53,36 @@ void StateManager::clear()
 
 void StateManager::initFromConfig()
 {
-    for (int i = 0; i < NUM_OF_CAM; i++)
+    allocateStorage();
+    const auto &cfg = vinsParameters();
+    const int num_cam = static_cast<int>(std::min(cfg.ric().size(), ric_.size()));
+    for (int i = 0; i < num_cam; i++)
     {
-        tic_[i] = vinsParameters().tic()[i];
-        ric_[i] = vinsParameters().ric()[i];
+        tic_[i] = cfg.tic()[i];
+        ric_[i] = cfg.ric()[i];
     }
-    td_ = vinsParameters().td();
+    td_ = cfg.td();
 }
 
-void StateManager::copyExtrinsicRotations(Matrix3d ric_out[NUM_OF_CAM]) const
+void StateManager::copyExtrinsicRotations(std::vector<Matrix3d> &ric_out) const
 {
-    for (int i = 0; i < NUM_OF_CAM; i++)
-        ric_out[i] = ric_[i];
+    ric_out = ric_;
+}
+
+int StateManager::activeSlotLimit() const
+{
+    return (slot_count_ >= window_size_) ? window_size_ : slot_count_;
+}
+
+int StateManager::latestSlot() const
+{
+    return std::min(slot_count_, window_size_);
 }
 
 void StateManager::rebuildIdToSlot()
 {
     id_to_slot_.clear();
-    const int limit = (slot_count_ >= WINDOW_SIZE) ? WINDOW_SIZE : slot_count_;
+    const int limit = activeSlotLimit();
     for (int i = 0; i <= limit; i++)
     {
         if (frame_ids_[i] != kInvalidFrameId)
@@ -105,7 +124,7 @@ void StateManager::setFrameAtSlot(int slot, const FrameState &frame)
 std::vector<Vector3d> StateManager::collectKeyframePositions() const
 {
     std::vector<Vector3d> poses;
-    const int limit = (slot_count_ >= WINDOW_SIZE) ? WINDOW_SIZE : slot_count_;
+    const int limit = activeSlotLimit();
     poses.reserve(static_cast<size_t>(limit + 1));
     for (int i = 0; i <= limit; i++)
         poses.push_back(Ps_[i]);
@@ -136,7 +155,7 @@ std::optional<int> StateManager::slotOf(FrameId id) const
 
 std::optional<FrameId> StateManager::frameIdAtStamp(double stamp_sec) const
 {
-    const int limit = (slot_count_ >= WINDOW_SIZE) ? WINDOW_SIZE : slot_count_;
+    const int limit = activeSlotLimit();
     for (int i = 0; i <= limit; i++)
     {
         if (std::abs(Headers_[i].stamp.toSec() - stamp_sec) < 1e-9)
@@ -147,8 +166,7 @@ std::optional<FrameId> StateManager::frameIdAtStamp(double stamp_sec) const
 
 FrameId StateManager::latestFrameId() const
 {
-    const int slot = std::min(slot_count_, WINDOW_SIZE);
-    return frame_ids_[slot];
+    return frame_ids_[latestSlot()];
 }
 
 FrameId StateManager::oldestFrameId() const
@@ -164,8 +182,8 @@ void StateManager::snapshotOldestFrame()
 
 void StateManager::updateKeyframeSnapshot()
 {
-    last_R_ = Rs_[WINDOW_SIZE];
-    last_P_ = Ps_[WINDOW_SIZE];
+    last_R_ = Rs_[window_size_];
+    last_P_ = Ps_[window_size_];
     last_R0_ = Rs_[0];
     last_P0_ = Ps_[0];
 }
@@ -223,86 +241,86 @@ void StateManager::initializeFrameAtSlot(int slot, FrameId id, const SimpleHeade
 
 void StateManager::syncToParameters()
 {
-    for (int i = 0; i <= WINDOW_SIZE; i++)
+    for (int i = 0; i <= window_size_; i++)
     {
-        para_Pose_[i][0] = Ps_[i].x();
-        para_Pose_[i][1] = Ps_[i].y();
-        para_Pose_[i][2] = Ps_[i].z();
+        para_pose_[i][0] = Ps_[i].x();
+        para_pose_[i][1] = Ps_[i].y();
+        para_pose_[i][2] = Ps_[i].z();
         Quaterniond q{Rs_[i]};
-        para_Pose_[i][3] = q.x();
-        para_Pose_[i][4] = q.y();
-        para_Pose_[i][5] = q.z();
-        para_Pose_[i][6] = q.w();
+        para_pose_[i][3] = q.x();
+        para_pose_[i][4] = q.y();
+        para_pose_[i][5] = q.z();
+        para_pose_[i][6] = q.w();
 
-        para_SpeedBias_[i][0] = Vs_[i].x();
-        para_SpeedBias_[i][1] = Vs_[i].y();
-        para_SpeedBias_[i][2] = Vs_[i].z();
+        para_speed_bias_[i][0] = Vs_[i].x();
+        para_speed_bias_[i][1] = Vs_[i].y();
+        para_speed_bias_[i][2] = Vs_[i].z();
 
-        para_SpeedBias_[i][3] = Bas_[i].x();
-        para_SpeedBias_[i][4] = Bas_[i].y();
-        para_SpeedBias_[i][5] = Bas_[i].z();
+        para_speed_bias_[i][3] = Bas_[i].x();
+        para_speed_bias_[i][4] = Bas_[i].y();
+        para_speed_bias_[i][5] = Bas_[i].z();
 
-        para_SpeedBias_[i][6] = Bgs_[i].x();
-        para_SpeedBias_[i][7] = Bgs_[i].y();
-        para_SpeedBias_[i][8] = Bgs_[i].z();
+        para_speed_bias_[i][6] = Bgs_[i].x();
+        para_speed_bias_[i][7] = Bgs_[i].y();
+        para_speed_bias_[i][8] = Bgs_[i].z();
     }
-    for (int i = 0; i < NUM_OF_CAM; i++)
+    for (int i = 0; i < static_cast<int>(para_ex_pose_.size()); i++)
     {
-        para_Ex_Pose_[i][0] = tic_[i].x();
-        para_Ex_Pose_[i][1] = tic_[i].y();
-        para_Ex_Pose_[i][2] = tic_[i].z();
+        para_ex_pose_[i][0] = tic_[i].x();
+        para_ex_pose_[i][1] = tic_[i].y();
+        para_ex_pose_[i][2] = tic_[i].z();
         Quaterniond q{ric_[i]};
-        para_Ex_Pose_[i][3] = q.x();
-        para_Ex_Pose_[i][4] = q.y();
-        para_Ex_Pose_[i][5] = q.z();
-        para_Ex_Pose_[i][6] = q.w();
+        para_ex_pose_[i][3] = q.x();
+        para_ex_pose_[i][4] = q.y();
+        para_ex_pose_[i][5] = q.z();
+        para_ex_pose_[i][6] = q.w();
     }
     if (vinsParameters().estimateTd())
-        para_Td_[0][0] = td_;
+        para_td_[0] = td_;
 }
 
 void StateManager::applyYawAlignment(const Vector3d &origin_P0, const Vector3d &origin_R0_ypr)
 {
-    Vector3d origin_R00 = Utility::R2ypr(Quaterniond(para_Pose_[0][6],
-                                                      para_Pose_[0][3],
-                                                      para_Pose_[0][4],
-                                                      para_Pose_[0][5])
+    Vector3d origin_R00 = Utility::R2ypr(Quaterniond(para_pose_[0][6],
+                                                      para_pose_[0][3],
+                                                      para_pose_[0][4],
+                                                      para_pose_[0][5])
                                              .toRotationMatrix());
     double y_diff = origin_R0_ypr.x() - origin_R00.x();
     Matrix3d rot_diff = Utility::ypr2R(Vector3d(y_diff, 0, 0));
     if (abs(abs(origin_R0_ypr.y()) - 90) < 1.0 || abs(abs(origin_R00.y()) - 90) < 1.0)
     {
         ROS_DEBUG("euler singular point!");
-        rot_diff = Rs_[0] * Quaterniond(para_Pose_[0][6],
-                                       para_Pose_[0][3],
-                                       para_Pose_[0][4],
-                                       para_Pose_[0][5])
+        rot_diff = Rs_[0] * Quaterniond(para_pose_[0][6],
+                                       para_pose_[0][3],
+                                       para_pose_[0][4],
+                                       para_pose_[0][5])
                                .toRotationMatrix()
                                .transpose();
     }
 
-    for (int i = 0; i <= WINDOW_SIZE; i++)
+    for (int i = 0; i <= window_size_; i++)
     {
-        Rs_[i] = rot_diff * Quaterniond(para_Pose_[i][6], para_Pose_[i][3], para_Pose_[i][4], para_Pose_[i][5])
+        Rs_[i] = rot_diff * Quaterniond(para_pose_[i][6], para_pose_[i][3], para_pose_[i][4], para_pose_[i][5])
                               .normalized()
                               .toRotationMatrix();
 
-        Ps_[i] = rot_diff * Vector3d(para_Pose_[i][0] - para_Pose_[0][0],
-                                  para_Pose_[i][1] - para_Pose_[0][1],
-                                  para_Pose_[i][2] - para_Pose_[0][2]) +
+        Ps_[i] = rot_diff * Vector3d(para_pose_[i][0] - para_pose_[0][0],
+                                  para_pose_[i][1] - para_pose_[0][1],
+                                  para_pose_[i][2] - para_pose_[0][2]) +
                 origin_P0;
 
-        Vs_[i] = rot_diff * Vector3d(para_SpeedBias_[i][0],
-                                    para_SpeedBias_[i][1],
-                                    para_SpeedBias_[i][2]);
+        Vs_[i] = rot_diff * Vector3d(para_speed_bias_[i][0],
+                                    para_speed_bias_[i][1],
+                                    para_speed_bias_[i][2]);
 
-        Bas_[i] = Vector3d(para_SpeedBias_[i][3],
-                          para_SpeedBias_[i][4],
-                          para_SpeedBias_[i][5]);
+        Bas_[i] = Vector3d(para_speed_bias_[i][3],
+                          para_speed_bias_[i][4],
+                          para_speed_bias_[i][5]);
 
-        Bgs_[i] = Vector3d(para_SpeedBias_[i][6],
-                          para_SpeedBias_[i][7],
-                          para_SpeedBias_[i][8]);
+        Bgs_[i] = Vector3d(para_speed_bias_[i][6],
+                          para_speed_bias_[i][7],
+                          para_speed_bias_[i][8]);
     }
 }
 
@@ -318,27 +336,27 @@ void StateManager::syncFromParameters(const SyncFromOptions &opts)
 
     applyYawAlignment(origin_P0, origin_R0);
 
-    for (int i = 0; i < NUM_OF_CAM; i++)
+    for (int i = 0; i < static_cast<int>(para_ex_pose_.size()); i++)
     {
-        tic_[i] = Vector3d(para_Ex_Pose_[i][0],
-                          para_Ex_Pose_[i][1],
-                          para_Ex_Pose_[i][2]);
-        ric_[i] = Quaterniond(para_Ex_Pose_[i][6],
-                             para_Ex_Pose_[i][3],
-                             para_Ex_Pose_[i][4],
-                             para_Ex_Pose_[i][5])
+        tic_[i] = Vector3d(para_ex_pose_[i][0],
+                          para_ex_pose_[i][1],
+                          para_ex_pose_[i][2]);
+        ric_[i] = Quaterniond(para_ex_pose_[i][6],
+                             para_ex_pose_[i][3],
+                             para_ex_pose_[i][4],
+                             para_ex_pose_[i][5])
                        .toRotationMatrix();
     }
 
     if (vinsParameters().estimateTd())
-        td_ = para_Td_[0][0];
+        td_ = para_td_[0];
 }
 
-double *StateManager::poseParameter(int slot) { return para_Pose_[slot]; }
-double *StateManager::speedBiasParameter(int slot) { return para_SpeedBias_[slot]; }
-double *StateManager::extrinsicParameter(int cam) { return para_Ex_Pose_[cam]; }
-double *StateManager::featureParameter(int feature_idx) { return para_Feature_[feature_idx]; }
-double *StateManager::timeDelayParameter() { return para_Td_[0]; }
+double *StateManager::poseParameter(int slot) { return para_pose_[slot].data(); }
+double *StateManager::speedBiasParameter(int slot) { return para_speed_bias_[slot].data(); }
+double *StateManager::extrinsicParameter(int cam) { return para_ex_pose_[cam].data(); }
+double *StateManager::featureParameter(int feature_idx) { return para_feature_[feature_idx].data(); }
+double *StateManager::timeDelayParameter() { return para_td_.data(); }
 
 void StateManager::clearMarginalizationPrior()
 {
@@ -351,12 +369,12 @@ void StateManager::clearMarginalizationPrior()
 void StateManager::slideWindowOld()
 {
     snapshotOldestFrame();
-    if (slot_count_ != WINDOW_SIZE)
+    if (slot_count_ != window_size_)
         return;
 
     unregisterSlot(0);
 
-    for (int i = 0; i < WINDOW_SIZE; i++)
+    for (int i = 0; i < window_size_; i++)
     {
         Rs_[i].swap(Rs_[i + 1]);
         std::swap(imu_data_[i].pre_integration, imu_data_[i + 1].pre_integration);
@@ -372,23 +390,23 @@ void StateManager::slideWindowOld()
         Bgs_[i].swap(Bgs_[i + 1]);
     }
 
-    Headers_[WINDOW_SIZE] = Headers_[WINDOW_SIZE - 1];
-    frame_ids_[WINDOW_SIZE] = frame_ids_[WINDOW_SIZE - 1];
-    Ps_[WINDOW_SIZE] = Ps_[WINDOW_SIZE - 1];
-    Vs_[WINDOW_SIZE] = Vs_[WINDOW_SIZE - 1];
-    Rs_[WINDOW_SIZE] = Rs_[WINDOW_SIZE - 1];
-    Bas_[WINDOW_SIZE] = Bas_[WINDOW_SIZE - 1];
-    Bgs_[WINDOW_SIZE] = Bgs_[WINDOW_SIZE - 1];
+    Headers_[window_size_] = Headers_[window_size_ - 1];
+    frame_ids_[window_size_] = frame_ids_[window_size_ - 1];
+    Ps_[window_size_] = Ps_[window_size_ - 1];
+    Vs_[window_size_] = Vs_[window_size_ - 1];
+    Rs_[window_size_] = Rs_[window_size_ - 1];
+    Bas_[window_size_] = Bas_[window_size_ - 1];
+    Bgs_[window_size_] = Bgs_[window_size_ - 1];
 
     rebuildIdToSlot();
 }
 
 void StateManager::slideWindowNew()
 {
-    if (slot_count_ != WINDOW_SIZE)
+    if (slot_count_ != window_size_)
         return;
 
-    const int fc = WINDOW_SIZE;
+    const int fc = window_size_;
     for (unsigned int i = 0; i < imu_data_[fc].dt_buf.size(); i++)
     {
         const double tmp_dt = imu_data_[fc].dt_buf[i];
@@ -424,28 +442,28 @@ void StateManager::slideWindow(SlideMode mode, const Vector3d &acc_0, const Vect
     if (mode == SlideMode::MARGIN_OLD)
     {
         slideWindowOld();
-        if (slot_count_ == WINDOW_SIZE)
+        if (slot_count_ == window_size_)
         {
-            imu_data_[WINDOW_SIZE].pre_integration =
+            imu_data_[window_size_].pre_integration =
                 std::make_shared<Integrator>(acc_0, gyr_0, Ba_end, Bg_end);
-            clearImuBufferAtSlot(WINDOW_SIZE);
+            clearImuBufferAtSlot(window_size_);
         }
     }
     else
     {
         slideWindowNew();
-        if (slot_count_ == WINDOW_SIZE)
+        if (slot_count_ == window_size_)
         {
-            imu_data_[WINDOW_SIZE].pre_integration =
+            imu_data_[window_size_].pre_integration =
                 std::make_shared<Integrator>(acc_0, gyr_0, Ba_end, Bg_end);
-            clearImuBufferAtSlot(WINDOW_SIZE);
+            clearImuBufferAtSlot(window_size_);
         }
     }
 }
 
 int StateManager::activeFrameCount() const
 {
-    return (slot_count_ >= WINDOW_SIZE) ? (WINDOW_SIZE + 1) : (slot_count_ + 1);
+    return (slot_count_ >= window_size_) ? (window_size_ + 1) : (slot_count_ + 1);
 }
 
 int StateManager::requireSlot(FrameId id) const
@@ -525,11 +543,16 @@ void StateManager::propagateImu(FrameId id, double dt, const Vector3d &acc, cons
 ParameterBlocks StateManager::parameterBlocks()
 {
     ParameterBlocks blocks;
-    blocks.pose = para_Pose_;
-    blocks.speed_bias = para_SpeedBias_;
-    blocks.ex_pose = para_Ex_Pose_;
-    blocks.feature = para_Feature_;
-    blocks.td = para_Td_[0];
+    blocks.pose = para_pose_.empty() ? nullptr
+                                     : reinterpret_cast<double (*)[SIZE_POSE]>(para_pose_.data());
+    blocks.speed_bias = para_speed_bias_.empty()
+                            ? nullptr
+                            : reinterpret_cast<double (*)[SIZE_SPEEDBIAS]>(para_speed_bias_.data());
+    blocks.ex_pose = para_ex_pose_.empty() ? nullptr
+                                           : reinterpret_cast<double (*)[SIZE_POSE]>(para_ex_pose_.data());
+    blocks.feature = para_feature_.empty() ? nullptr
+                                           : reinterpret_cast<double (*)[SIZE_FEATURE]>(para_feature_.data());
+    blocks.td = para_td_.data();
     return blocks;
 }
 

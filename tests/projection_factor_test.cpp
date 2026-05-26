@@ -26,8 +26,12 @@ namespace
 
 void setDefaultVisualSqrtInfo()
 {
-    ProjectionFactor::sqrt_info = (FOCAL_LENGTH / 1.5) * Eigen::Matrix2d::Identity();
+    ProjectionFactor::sqrt_info = (focalLength() / 1.5) * Eigen::Matrix2d::Identity();
     auto &params = vinsParameters();
+    params.setWindowSize(10);
+    params.setNumOfCam(1);
+    params.setMaxFeatureCount(1000);
+    params.setFocalLength(460.0);
     params.setImageRow(480.0);
     params.setImageCol(640.0);
     params.setRollingShutterTr(0.01);

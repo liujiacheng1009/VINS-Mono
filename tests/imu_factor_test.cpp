@@ -34,6 +34,10 @@ void setDefaultImuNoise()
     // computes `LLT(covariance.inverse())`. With zero noise the covariance is
     // singular and the LLT factor is full of NaN/Inf.
     auto &params = vinsParameters();
+    params.setWindowSize(10);
+    params.setNumOfCam(1);
+    params.setMaxFeatureCount(1000);
+    params.setFocalLength(460.0);
     params.setAccNoise(0.1);
     params.setAccRandomWalk(0.001);
     params.setGyrNoise(0.01);

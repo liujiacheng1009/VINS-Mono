@@ -5,6 +5,7 @@
 #include "factor/imu_factor.h"
 #include "factor/marginalization_factor.h"
 
+#include <array>
 #include <eigen3/Eigen/Dense>
 #include <memory>
 #include <optional>
@@ -59,7 +60,7 @@ class StateManager
   public:
     StateManager();
 
-    void copyExtrinsicRotations(Matrix3d ric_out[NUM_OF_CAM]) const;
+    void copyExtrinsicRotations(std::vector<Matrix3d> &ric_out) const;
 
     void clear();
     void initFromConfig();
@@ -67,6 +68,9 @@ class StateManager
     int slotCount() const { return slot_count_; }
     void setSlotCount(int count) { slot_count_ = count; }
     int activeFrameCount() const;
+
+    int windowSize() const { return window_size_; }
+    int latestSlot() const;
 
     void bindFrame(int slot, FrameId id, const SimpleHeader &header);
 
@@ -167,31 +171,34 @@ class StateManager
 
   private:
     int requireSlot(FrameId id) const;
+    int activeSlotLimit() const;
 
+    void allocateStorage();
     void rebuildIdToSlot();
     void unregisterSlot(int slot);
     void applyYawAlignment(const Vector3d &origin_P0, const Vector3d &origin_R0_ypr);
 
+    int window_size_ = 10;
     int slot_count_ = 0;
-    FrameId frame_ids_[WINDOW_SIZE + 1];
+    std::vector<FrameId> frame_ids_;
     std::unordered_map<FrameId, int> id_to_slot_;
 
-    Vector3d Ps_[WINDOW_SIZE + 1];
-    Vector3d Vs_[WINDOW_SIZE + 1];
-    Matrix3d Rs_[WINDOW_SIZE + 1];
-    Vector3d Bas_[WINDOW_SIZE + 1];
-    Vector3d Bgs_[WINDOW_SIZE + 1];
-    SimpleHeader Headers_[WINDOW_SIZE + 1];
+    std::vector<Vector3d> Ps_;
+    std::vector<Vector3d> Vs_;
+    std::vector<Matrix3d> Rs_;
+    std::vector<Vector3d> Bas_;
+    std::vector<Vector3d> Bgs_;
+    std::vector<SimpleHeader> Headers_;
 
-    Matrix3d ric_[NUM_OF_CAM];
-    Vector3d tic_[NUM_OF_CAM];
+    std::vector<Matrix3d> ric_;
+    std::vector<Vector3d> tic_;
     double td_ = 0.0;
 
-    double para_Pose_[WINDOW_SIZE + 1][SIZE_POSE];
-    double para_SpeedBias_[WINDOW_SIZE + 1][SIZE_SPEEDBIAS];
-    double para_Feature_[NUM_OF_F][SIZE_FEATURE];
-    double para_Ex_Pose_[NUM_OF_CAM][SIZE_POSE];
-    double para_Td_[1][1];
+    std::vector<std::array<double, SIZE_POSE>> para_pose_;
+    std::vector<std::array<double, SIZE_SPEEDBIAS>> para_speed_bias_;
+    std::vector<std::array<double, SIZE_FEATURE>> para_feature_;
+    std::vector<std::array<double, SIZE_POSE>> para_ex_pose_;
+    std::array<double, 1> para_td_{0.0};
 
     std::shared_ptr<Integrator> tmp_pre_integration_;
 
@@ -202,7 +209,7 @@ class StateManager
     Matrix3d last_R0_;
     Vector3d last_P0_;
 
-    FrameImuData imu_data_[WINDOW_SIZE + 1];
+    std::vector<FrameImuData> imu_data_;
 
     MarginalizationInfo *last_marginalization_info_ = nullptr;
     std::vector<double *> last_marginalization_parameter_blocks_;

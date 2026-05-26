@@ -1,4 +1,5 @@
 #include "state_manager.h"
+#include "parameters.h"
 #include "utility/utility.h"
 
 #include <cmath>
@@ -19,6 +20,10 @@ bool check(const char *name, bool ok)
 
 int main()
 {
+    vinsParameters().setWindowSize(10);
+    vinsParameters().setNumOfCam(1);
+    vinsParameters().setMaxFeatureCount(1000);
+
     StateManager sm;
     sm.clear();
     bool ok = true;
@@ -38,8 +43,8 @@ int main()
     sm.syncFromParameters();
     ok &= check("sync roundtrip P", (sm.positionAtSlot(0) - p_before).norm() < 1e-10);
 
-    sm.setSlotCount(WINDOW_SIZE);
-    for (int i = 0; i <= WINDOW_SIZE; i++)
+    sm.setSlotCount(windowSize());
+    for (int i = 0; i <= windowSize(); i++)
     {
         SimpleHeader h;
         h.stamp = SimpleTime(static_cast<double>(i));

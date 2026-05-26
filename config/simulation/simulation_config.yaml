@@ -27,6 +27,12 @@ extrinsicTranslation: !!opencv-matrix
   dt: d
   data: [0,0.2, 0.6]
 
+# sliding window and camera layout
+window_size: 10           # number of keyframes in the optimization window (slots 0..window_size)
+num_of_cam: 1             # number of cameras (mono=1; stereo would use 2 with per-camera extrinsics)
+max_feature_count: 1000   # max landmarks in Ceres parameter pool
+focal_length: 460.0       # pixel focal length for parallax threshold and projection sqrt_info
+
 #optimization parameters
 max_solver_time: 0.04  # max solver itration time (ms), to guarantee real time
 max_num_iterations: 8   # max solver itrations, to guarantee real time

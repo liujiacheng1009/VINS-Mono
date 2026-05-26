@@ -9,10 +9,6 @@
 #include <opencv2/core/eigen.hpp>
 #include <fstream>
 
-const double FOCAL_LENGTH = 460.0;
-const int WINDOW_SIZE = 10;
-const int NUM_OF_CAM = 1;
-const int NUM_OF_F = 1000;
 //#define UNIT_SPHERE_ERROR
 
 /** Runtime configuration loaded from YAML; access only via getters/setters. */
@@ -22,6 +18,18 @@ class VinsParameters
     static VinsParameters &instance();
 
     void loadFromConfig(const std::string &config_file);
+
+    int windowSize() const { return window_size_; }
+    void setWindowSize(int v) { window_size_ = v; }
+
+    int numOfCam() const { return num_of_cam_; }
+    void setNumOfCam(int v) { num_of_cam_ = v; }
+
+    int maxFeatureCount() const { return max_feature_count_; }
+    void setMaxFeatureCount(int v) { max_feature_count_ = v; }
+
+    double focalLength() const { return focal_length_; }
+    void setFocalLength(double v) { focal_length_ = v; }
 
     double initDepth() const { return init_depth_; }
     void setInitDepth(double v) { init_depth_ = v; }
@@ -103,6 +111,10 @@ class VinsParameters
     void setRollingShutterTr(double v) { tr_ = v; }
 
   private:
+    int window_size_ = 10;
+    int num_of_cam_ = 1;
+    int max_feature_count_ = 1000;
+    double focal_length_ = 460.0;
     double init_depth_ = 5.0;
     double min_parallax_ = 0.0;
     double acc_n_ = 0.0;
@@ -129,6 +141,12 @@ class VinsParameters
 };
 
 inline VinsParameters &vinsParameters() { return VinsParameters::instance(); }
+
+/** Shorthand accessors for layout parameters (see VinsParameters). */
+inline int windowSize() { return vinsParameters().windowSize(); }
+inline int numOfCam() { return vinsParameters().numOfCam(); }
+inline int maxFeatureCount() { return vinsParameters().maxFeatureCount(); }
+inline double focalLength() { return vinsParameters().focalLength(); }
 
 void readParameters(const std::string &config_file);
 

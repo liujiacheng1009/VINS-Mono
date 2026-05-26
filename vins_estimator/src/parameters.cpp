@@ -15,13 +15,11 @@ void setMinParallaxFromPixels(VinsParameters &p, double keyframe_parallax_px, do
         p.setMinParallax(keyframe_parallax_px / focal);
 }
 
-bool applyCamChainToParams(VinsParameters &p,
-                           const CamChainData &chain,
-                           int num_cam,
-                           const Eigen::Matrix3d &R_ic0,
-                           const Eigen::Vector3d &t_ic0,
-                           int estimate_extrinsic,
-                           double keyframe_parallax_px)
+bool applyCamerasToParams(VinsParameters &p,
+                          const CamChainFile &imu_chain,
+                          const CamChainFile &stereo_chain,
+                          int estimate_extrinsic,
+                          double keyframe_parallax_px)
 {
     double focal = p.focalLength();
     double width = p.imageCol();
@@ -29,7 +27,8 @@ bool applyCamChainToParams(VinsParameters &p,
     std::vector<Eigen::Matrix3d> ric_chain;
     std::vector<Eigen::Vector3d> tic_chain;
 
-    if (!applyCamChain(num_cam, chain, R_ic0, t_ic0, focal, width, height, ric_chain, tic_chain))
+    if (!applyCameraSetup(p.numOfCam(), p.cameraIds(), imu_chain, stereo_chain, focal, width, height, ric_chain,
+                          tic_chain))
         return false;
 
     p.setFocalLength(focal);
@@ -54,6 +53,44 @@ void warnExtrinsicMode(int estimate_extrinsic)
         LOG_TXT_LEVEL(logging::ValueLogger::Level::WARNING, " Optimize extrinsic param around initial guess!");
     else if (estimate_extrinsic == 0)
         LOG_TXT_LEVEL(logging::ValueLogger::Level::WARNING, " fix extrinsic param ");
+}
+
+std::vector<int> readCameraIds(cv::FileStorage &fs, int num_cam)
+{
+    std::vector<int> ids;
+    const cv::FileNode node = fs["camera_ids"];
+    if (!node.empty())
+    {
+        if (node.type() == cv::FileNode::SEQ)
+        {
+            for (auto it = node.begin(); it != node.end(); ++it)
+                ids.push_back(static_cast<int>(*it));
+        }
+        else
+        {
+            cv::Mat mat;
+            node >> mat;
+            if (!mat.empty())
+            {
+                if (mat.rows == 1 && mat.cols >= 1)
+                {
+                    for (int c = 0; c < mat.cols; ++c)
+                        ids.push_back(mat.at<int>(0, c));
+                }
+                else if (mat.cols == 1 && mat.rows >= 1)
+                {
+                    for (int r = 0; r < mat.rows; ++r)
+                        ids.push_back(mat.at<int>(r, 0));
+                }
+            }
+        }
+    }
+    if (ids.empty())
+    {
+        for (int i = 0; i < num_cam; ++i)
+            ids.push_back(i);
+    }
+    return ids;
 }
 
 class ConfigLoader
@@ -81,16 +118,14 @@ class ConfigLoader
         params_.setEstimateExtrinsic(estimate_extrinsic);
         params_.clearExtrinsics();
 
-        Eigen::Matrix3d R_ic0 = Eigen::Matrix3d::Identity();
-        Eigen::Vector3d t_ic0 = Eigen::Vector3d::Zero();
-        readImuCam0Extrinsic(estimate_extrinsic, R_ic0, t_ic0);
-
-        if (!loadFromCamChain(config_file, estimate_extrinsic, R_ic0, t_ic0, keyframe_parallax_px))
+        if (!loadFromCamChains(config_file, estimate_extrinsic, keyframe_parallax_px))
             loadFocalFallback(keyframe_parallax_px);
 
         LOG_TXT("focal_length: ", params_.focalLength(), " ROW: ", params_.imageRow(), " COL: ", params_.imageCol());
+        for (int s = 0; s < params_.numOfCam(); ++s)
+            LOG_TXT("camera slot ", s, " -> cam", params_.cameraId(s));
 
-        finalizeExtrinsics(estimate_extrinsic, R_ic0, t_ic0);
+        finalizeExtrinsics(estimate_extrinsic);
         logExtrinsics();
         loadTimingAndDepth();
 
@@ -132,6 +167,17 @@ class ConfigLoader
                           " too small, using 10");
             params_.setMaxFeatureCount(10);
         }
+
+        std::vector<int> camera_ids = readCameraIds(fs_, params_.numOfCam());
+        if (static_cast<int>(camera_ids.size()) != params_.numOfCam())
+        {
+            LOG_TXT_LEVEL(logging::ValueLogger::Level::WARNING, "camera_ids size ", camera_ids.size(),
+                          " != num_of_cam ", params_.numOfCam(), ", using 0..N-1");
+            camera_ids.clear();
+            for (int i = 0; i < params_.numOfCam(); ++i)
+                camera_ids.push_back(i);
+        }
+        params_.setCameraIds(std::move(camera_ids));
     }
 
     void loadSolver()
@@ -170,11 +216,10 @@ class ConfigLoader
 
     int readEstimateExtrinsic() { return static_cast<int>(fs_["estimate_extrinsic"]); }
 
-    void readImuCam0Extrinsic(int estimate_extrinsic, Eigen::Matrix3d &R_ic0, Eigen::Vector3d &t_ic0)
+    bool loadLegacyImuCam0(Eigen::Matrix3d &R_ic0, Eigen::Vector3d &t_ic0)
     {
-        if (estimate_extrinsic == 2)
-            return;
-
+        if (fs_["extrinsicRotation"].empty() || fs_["extrinsicTranslation"].empty())
+            return false;
         cv::Mat cv_R, cv_T;
         fs_["extrinsicRotation"] >> cv_R;
         fs_["extrinsicTranslation"] >> cv_T;
@@ -182,38 +227,66 @@ class ConfigLoader
         cv::cv2eigen(cv_T, t_ic0);
         Eigen::Quaterniond Q(R_ic0);
         R_ic0 = Q.normalized().toRotationMatrix();
+        return true;
     }
 
-    bool loadFromCamChain(const std::string &config_file,
-                          int estimate_extrinsic,
-                          const Eigen::Matrix3d &R_ic0,
-                          const Eigen::Vector3d &t_ic0,
-                          double keyframe_parallax_px)
+    bool loadFromCamChains(const std::string &config_file, int estimate_extrinsic, double keyframe_parallax_px)
     {
-        std::string cam_chain_file_key;
+        std::string stereo_key;
         if (!fs_["cam_chain_file"].empty())
-            fs_["cam_chain_file"] >> cam_chain_file_key;
+            fs_["cam_chain_file"] >> stereo_key;
 
-        const std::string cam_chain_path = resolveCamChainPath(config_file, cam_chain_file_key);
-        CamChainData cam_chain;
-        if (!loadCamChainFile(cam_chain_path, cam_chain))
+        std::string imu_key;
+        if (!fs_["cam_chain_imu_file"].empty())
+            fs_["cam_chain_imu_file"] >> imu_key;
+
+        const std::string stereo_path = resolveCamChainPath(config_file, stereo_key);
+        const std::string imu_path = resolveCamChainImuPath(config_file, imu_key);
+
+        CamChainFile stereo_chain;
+        CamChainFile imu_chain;
+        const bool stereo_ok = loadCamChainYaml(stereo_path, stereo_chain);
+        const bool imu_ok = loadCamChainYaml(imu_path, imu_chain);
+
+        if (!imu_ok)
         {
-            if (!cam_chain_file_key.empty())
-                LOG_TXT_LEVEL(logging::ValueLogger::Level::WARNING, "cam_chain_file set but not loaded: ",
-                              cam_chain_path);
-            return false;
+            if (!imu_key.empty() || !fs_["cam_chain_imu_file"].empty())
+                LOG_TXT_LEVEL(logging::ValueLogger::Level::WARNING, "cam_chain_imu_file not loaded: ", imu_path);
+
+            if (estimate_extrinsic == 2)
+                return false;
+
+            Eigen::Matrix3d R_ic0;
+            Eigen::Vector3d t_ic0;
+            if (!loadLegacyImuCam0(R_ic0, t_ic0))
+                return false;
+
+            if (!stereo_ok)
+                return false;
+
+            CamChainFile imu_from_legacy;
+            CamNode &n0 = imu_from_legacy.cameras[0];
+            Eigen::Matrix4d T_imu_cam = Eigen::Matrix4d::Identity();
+            T_imu_cam.block<3, 3>(0, 0) = R_ic0;
+            T_imu_cam.block<3, 1>(0, 3) = t_ic0;
+            n0.T_cam_imu = T_imu_cam.inverse();
+            n0.has_T_cam_imu = true;
+            LOG_TXT_LEVEL(logging::ValueLogger::Level::WARNING,
+                          "using simulation_config extrinsicRotation/Translation as legacy IMU–cam0");
+
+            return applyCamerasToParams(params_, imu_from_legacy, stereo_chain, estimate_extrinsic,
+                                        keyframe_parallax_px);
         }
 
-        LOG_TXT("Loaded cam_chain from ", cam_chain_path, " (", cam_chain.cameras.size(),
-                " cameras in file, using ", params_.numOfCam(), ")");
-
-        if (!applyCamChainToParams(params_, cam_chain, params_.numOfCam(), R_ic0, t_ic0, estimate_extrinsic,
-                                   keyframe_parallax_px))
+        if (!stereo_ok)
         {
-            LOG_TXT_LEVEL(logging::ValueLogger::Level::WARNING, "cam_chain: apply failed");
-            return false;
+            LOG_TXT_LEVEL(logging::ValueLogger::Level::WARNING, "cam_chain_file not loaded: ", stereo_path);
+            return applyCamerasToParams(params_, imu_chain, imu_chain, estimate_extrinsic, keyframe_parallax_px);
         }
-        return true;
+
+        LOG_TXT("Loaded cam_chain-imucam from ", imu_path);
+        LOG_TXT("Loaded cam_chain from ", stereo_path);
+        return applyCamerasToParams(params_, imu_chain, stereo_chain, estimate_extrinsic, keyframe_parallax_px);
     }
 
     void loadFocalFallback(double keyframe_parallax_px)
@@ -232,7 +305,7 @@ class ConfigLoader
         setMinParallaxFromPixels(params_, keyframe_parallax_px, params_.focalLength());
     }
 
-    void finalizeExtrinsics(int estimate_extrinsic, const Eigen::Matrix3d &R_ic0, const Eigen::Vector3d &t_ic0)
+    void finalizeExtrinsics(int estimate_extrinsic)
     {
         if (params_.ric().empty())
         {
@@ -244,13 +317,11 @@ class ConfigLoader
             }
             else
             {
+                Eigen::Matrix3d R_ic0 = Eigen::Matrix3d::Identity();
+                Eigen::Vector3d t_ic0 = Eigen::Vector3d::Zero();
+                loadLegacyImuCam0(R_ic0, t_ic0);
                 for (int c = 0; c < params_.numOfCam(); ++c)
                     params_.addExtrinsic(R_ic0, t_ic0);
-                if (params_.numOfCam() > 1)
-                    LOG_TXT_LEVEL(logging::ValueLogger::Level::WARNING,
-                                  "num_of_cam=", params_.numOfCam(),
-                                  ": using the same extrinsicRotation/Translation for every camera; "
-                                  "set cam_chain_file for stereo extrinsics.");
             }
             return;
         }
@@ -273,12 +344,11 @@ class ConfigLoader
         if (params_.ric().empty())
             return;
 
-        LOG_TXT("Extrinsic_R (cam0):\n", params_.ric()[0]);
-        LOG_TXT("Extrinsic_T (cam0):\n", params_.tic()[0].transpose());
-        if (params_.numOfCam() > 1 && params_.ric().size() > 1)
+        for (int s = 0; s < params_.numOfCam() && s < static_cast<int>(params_.ric().size()); ++s)
         {
-            LOG_TXT("Extrinsic_R (cam1):\n", params_.ric()[1]);
-            LOG_TXT("Extrinsic_T (cam1):\n", params_.tic()[1].transpose());
+            LOG_TXT("Extrinsic slot ", s, " (cam", params_.cameraId(s), ") R:\n", params_.ric()[static_cast<size_t>(s)]);
+            LOG_TXT("Extrinsic slot ", s, " (cam", params_.cameraId(s),
+                    ") T: ", params_.tic()[static_cast<size_t>(s)].transpose());
         }
     }
 

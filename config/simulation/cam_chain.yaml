@@ -4,8 +4,8 @@
 # Stereo baseline: 6 cm along +X in cam0 (cam1 to the right of cam0).
 # Distortion is zero (ideal pinhole simulation; model kept for Kalibr toolchain compatibility).
 #
-# IMU–camera extrinsics remain in simulation_config.yaml (extrinsicRotation / extrinsicTranslation).
-# For num_of_cam: 2, load per-camera IMU extrinsics separately when extending the simulator.
+# IMU–cam0 extrinsics: config/simulation/cam_chain-imucam.yaml (T_cam_imu).
+# IMU–cam1+ : derived from cam0 and T_cn_cnm1 below.
 
 cam0:
   cam_overlaps: [1]

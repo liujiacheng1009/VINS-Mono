@@ -1,0 +1,18 @@
+# Kalibr cam_chain with IMU–camera extrinsics (cam0 T_cam_imu).
+# Matches simulation_config extrinsicRotation / extrinsicTranslation (imu^R_cam, imu^T_cam).
+# Intrinsics / resolution match cam_chain.yaml / simulation (752x480, fu=fv=460).
+
+cam0:
+  T_cam_imu:
+  - [0.0, -1.0, 0.0, 0.2]
+  - [0.0, 0.0, 1.0, -0.6]
+  - [-1.0, 0.0, 0.0, 0.0]
+  - [0.0, 0.0, 0.0, 1.0]
+  cam_overlaps: [1]
+  camera_model: pinhole
+  distortion_coeffs: [0.0, 0.0, 0.0, 0.0]
+  distortion_model: equidistant
+  intrinsics: [460.0, 460.0, 376.0, 240.0]
+  resolution: [752, 480]
+  rostopic: /cam0/image_raw
+  timeshift_cam_imu: 0.0

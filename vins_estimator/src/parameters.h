@@ -24,6 +24,11 @@ class VinsParameters
     int numOfCam() const { return num_of_cam_; }
     void setNumOfCam(int v) { num_of_cam_ = v; }
 
+    /** Physical camera index for estimator slot \a slot (0 .. numOfCam()-1). */
+    int cameraId(int slot) const { return camera_ids_.at(static_cast<size_t>(slot)); }
+    const std::vector<int> &cameraIds() const { return camera_ids_; }
+    void setCameraIds(std::vector<int> ids) { camera_ids_ = std::move(ids); }
+
     int maxFeatureCount() const { return max_feature_count_; }
     void setMaxFeatureCount(int v) { max_feature_count_ = v; }
 
@@ -100,6 +105,7 @@ class VinsParameters
   private:
     int window_size_ = 10;
     int num_of_cam_ = 1;
+    std::vector<int> camera_ids_{0};
     int max_feature_count_ = 1000;
     double focal_length_ = 460.0;
     double init_depth_ = 5.0;

@@ -96,3 +96,27 @@ target_link_libraries(marginalization_factor_test PRIVATE
 )
 
 gtest_discover_tests(marginalization_factor_test)
+
+add_executable(cam_chain_extrinsic_test
+    cam_chain_extrinsic_test.cpp
+    ${VINS_SRC_DIR}/cam_chain.cpp
+)
+
+target_include_directories(cam_chain_extrinsic_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${VINS_SRC_DIR}
+    ${EIGEN3_INCLUDE_DIRS}
+)
+
+target_compile_definitions(cam_chain_extrinsic_test PRIVATE
+    VINS_TEST_SIM_CONFIG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../config/simulation"
+)
+
+target_link_libraries(cam_chain_extrinsic_test PRIVATE
+    GTest::gtest
+    GTest::gtest_main
+    log_value::log_value
+    pthread
+)
+
+gtest_discover_tests(cam_chain_extrinsic_test)

@@ -116,8 +116,6 @@ class StateManager
     void pushImuSampleAtSlot(int slot, double dt, const Vector3d &acc, const Vector3d &gyr);
     void clearImuBufferAtSlot(int slot);
 
-    std::shared_ptr<Integrator> &tmpPreIntegration() { return tmp_pre_integration_; }
-
     void initializeFrameAtSlot(int slot, FrameId id, const SimpleHeader &header,
                                const Vector3d &P, const Matrix3d &R, const Vector3d &V,
                                const Vector3d &Ba, const Vector3d &Bg,
@@ -153,8 +151,6 @@ class StateManager
     std::vector<std::array<double, SIZE_FEATURE>> para_feature_;
     std::vector<std::array<double, SIZE_POSE>> para_ex_pose_;
     std::array<double, 1> para_td_{0.0};
-
-    std::shared_ptr<Integrator> tmp_pre_integration_;
 
     Matrix3d back_R0_;
     Vector3d back_P0_;

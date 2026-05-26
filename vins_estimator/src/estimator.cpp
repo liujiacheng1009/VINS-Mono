@@ -66,7 +66,6 @@ void Estimator::processIMU(double dt, const Vector3d &linear_acceleration, const
     if (slot != 0)
     {
         state_.preIntegrationAtSlot(slot)->process(dt, linear_acceleration, angular_velocity);
-        state_.tmpPreIntegration()->process(dt, linear_acceleration, angular_velocity);
 
         state_.pushImuSampleAtSlot(slot, dt, linear_acceleration, angular_velocity);
 
@@ -100,9 +99,6 @@ void Estimator::processImage(const ImageFrameInput &input)
     LOG_TXT_LEVEL(logging::ValueLogger::Level::INFO, marginalization_flag ? "Non-keyframe" : "Keyframe");
     LOG_TXT_LEVEL(logging::ValueLogger::Level::INFO, "Solving ", slot);
     LOG_TXT_LEVEL(logging::ValueLogger::Level::INFO, "number of feature: ", f_manager.getFeatureCount());
-
-    state_.tmpPreIntegration() =
-        std::make_shared<Integrator>(acc_0, gyr_0, state_.accBiasAtSlot(slot), state_.gyrBiasAtSlot(slot));
 
     if (solver_flag == INITIAL)
     {

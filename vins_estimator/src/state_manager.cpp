@@ -41,7 +41,6 @@ void StateManager::clear()
     slot_count_ = 0;
     id_to_slot_.clear();
     td_ = vinsParameters().td();
-    tmp_pre_integration_.reset();
     clearMarginalizationPrior();
 
     back_R0_.setIdentity();

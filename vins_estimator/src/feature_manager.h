@@ -14,6 +14,8 @@ using namespace Eigen;
 
 #include "parameters.h"
 
+class StateManager;
+
 class FeaturePerFrame
 {
   public:
@@ -44,7 +46,7 @@ class FeaturePerId
 {
   public:
     const int feature_id;
-    int start_frame;
+    int start_slot; // 滑动窗口槽位下标，非 FrameId
     vector<FeaturePerFrame> feature_per_frame;
 
     int used_num;
@@ -55,8 +57,8 @@ class FeaturePerId
 
     Vector3d gt_p;
 
-    FeaturePerId(int _feature_id, int _start_frame)
-        : feature_id(_feature_id), start_frame(_start_frame),
+    FeaturePerId(int _feature_id, int _start_slot)
+        : feature_id(_feature_id), start_slot(_start_slot),
           used_num(0), estimated_depth(-1.0), solve_flag(0)
     {
     }
@@ -67,7 +69,7 @@ class FeaturePerId
 class FeatureManager
 {
   public:
-    FeatureManager(Matrix3d _Rs[]);
+    FeatureManager();
 
     void setRic(Matrix3d _ric[]);
 
@@ -84,7 +86,7 @@ class FeatureManager
     void removeFailures();
     void clearDepth(const VectorXd &x);
     VectorXd getDepthVector();
-    void triangulate(Vector3d Ps[], Vector3d tic[], Matrix3d ric[]);
+    void triangulate(StateManager &state);
     void removeBackShiftDepth(Eigen::Matrix3d marg_R, Eigen::Vector3d marg_P, Eigen::Matrix3d new_R, Eigen::Vector3d new_P);
     void removeBack();
     void removeFront(int frame_count);
@@ -94,7 +96,6 @@ class FeatureManager
 
   private:
     double compensatedParallax2(const FeaturePerId &it_per_id, int frame_count);
-    const Matrix3d *Rs;
     Matrix3d ric[NUM_OF_CAM];
 };
 

@@ -2,7 +2,7 @@
 
 本文档描述从 `Estimator` 中抽取 `StateManager` 的重构方案，用于统一管理 `vins_estimator/src/estimator.h` 中的全部状态变量及其生命周期操作。
 
-关注职责边界、接口契约和迁移路径，**本文档仅定义设计，不包含实现**。
+关注职责边界、接口契约和迁移路径。§十一 记录**实现状态**（2026-05 已完成核心迁移）。
 
 ---
 
@@ -722,3 +722,46 @@ CMakeLists.txt 中为 `vins_estimator` target 添加 `state_manager.cpp`。
 | `last_marginalization_info` | `lastMarginalizationInfo()` |
 | `Ap[]`, `bp[]`, `backup_A`, `backup_b` | **删除**（§2.10，勿纳入 StateManager） |
 | `relocalization_info` 等（遗留） | **不纳入** StateManager，建议删除（§2.9） |
+
+---
+
+## 十一、实现状态检查清单
+
+> 对照 §六 迁移阶段与 §4 接口契约。最后验证：`cmake -S standalone -B build_standalone && cmake --build build_standalone`，`./vins_simulation_standalone` 指标与 README 一致（raw mae≈0.0753451）。
+
+| 项 | 状态 | 说明 |
+|----|------|------|
+| **Phase 0** 删除 `Ap/bp/backup_*` | ✅ | `estimator.h` 已无该成员 |
+| **Phase 0/5** 删除回环/重定位遗留 | ✅ | `vins_estimator` 内无 `relocalization_info` / `setReloFrame` 等 |
+| **Phase 1** `FrameId`、`ImageFrameInput`、输入层赋 ID | ✅ | `utility/simple_types.h`、`utility/image_frame_input.h`、`simulation_standalone.cpp` |
+| **Phase 1** `StateManager` 窗口状态、`bindFrame`、`frameState`/`frameAtSlot` | ✅ | `state_manager.h/.cpp` |
+| **Phase 1** `Estimator` 持有 `state_` | ✅ | `estimator.h` |
+| **Phase 2** `para_*`、`syncTo/FromParameters`、`applyYawAlignment` | ✅ | `syncStateToParameters` / `syncParametersToState` 为 thin wrapper |
+| **Phase 2** `parameterBlocks()` | ✅ | 已实现；`optimization()` 仍直接调 `poseParameter` 等（等价） |
+| **Phase 3** IMU 缓冲、`slideWindow*`、`propagateImu`、`mergeImuBuffer` | ✅ | |
+| **Phase 4** `ric/tic/td`、边缘化 prior、`extrinsic()` | ✅ | |
+| **Phase 4** 删除 `Estimator` 已迁移成员 | ✅ | 窗口/Ceres/IMU 状态均在 `StateManager` |
+| **Phase 5** 删除 `key_poses` | ✅ | |
+| **Phase 5** `FeatureManager::triangulate(StateManager&)` | ✅ | `feature_manager.cpp` |
+| **Phase 5** 消除 `positionsData()` 过渡接口 | ✅ | 未引入；通过 `positionAtSlot` / `frameState` / `friend` 访问 |
+| **Phase 5** 窗口数组私有化 | ✅ | `Ps_/Vs_/...` 私有；无 `friend`，经公开访问器 |
+| **§4.7** `backRotation/Position`、`last*` 快照 | ✅ | |
+| **§九** 单元测试 | ✅ | `state_manager_smoke_test` + `ctest` 仿真指标回归 |
+| **§十-6** `FeatureManager::start_frame` → `FrameId` | ✅（语义澄清） | 重命名为 `start_slot`（窗口槽位，非 `FrameId`） |
+| **§十-1** `para_Feature` 归属 | ✅ | 暂留 `StateManager`，与 `FeatureManager::getDepthVector` 协作 |
+| **ROS 主路径** `vins_estimator` catkin 目标 | ⚠️ 未在本仓库验证 | standalone 路径已覆盖核心状态机 |
+
+### 验证记录
+
+```bash
+cmake -S standalone -B build_standalone && cmake --build build_standalone
+cd build_standalone && ctest --output-on-failure
+# 或单独：./build_standalone/vins_simulation_standalone
+#         ./standalone/check_simulation_metrics.sh
+```
+
+```
+[metrics][raw] mae=0.0753448 rmse=0.0783776
+[metrics][aligned] mae=0.0752903 rmse=0.0779392
+[metrics][vel] mae=0.00444835
+```

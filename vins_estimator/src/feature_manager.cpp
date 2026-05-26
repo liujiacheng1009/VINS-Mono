@@ -1,12 +1,12 @@
 #include "feature_manager.h"
+#include "state_manager.h"
 
 int FeaturePerId::endFrame()
 {
-    return start_frame + feature_per_frame.size() - 1;
+    return start_slot + feature_per_frame.size() - 1;
 }
 
-FeatureManager::FeatureManager(Matrix3d _Rs[])
-    : Rs(_Rs)
+FeatureManager::FeatureManager()
 {
     for (int i = 0; i < NUM_OF_CAM; i++)
         ric[i].setIdentity();
@@ -33,7 +33,7 @@ int FeatureManager::getFeatureCount()
 
         it.used_num = it.feature_per_frame.size();
 
-        if (it.used_num >= 2 && it.start_frame < WINDOW_SIZE - 2)
+        if (it.used_num >= 2 && it.start_slot < WINDOW_SIZE - 2)
         {
             cnt++;
         }
@@ -76,8 +76,8 @@ bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vec
 
     for (auto &it_per_id : feature)
     {
-        if (it_per_id.start_frame <= frame_count - 2 &&
-            it_per_id.start_frame + int(it_per_id.feature_per_frame.size()) - 1 >= frame_count - 1)
+        if (it_per_id.start_slot <= frame_count - 2 &&
+            it_per_id.start_slot + int(it_per_id.feature_per_frame.size()) - 1 >= frame_count - 1)
         {
             parallax_sum += compensatedParallax2(it_per_id, frame_count);
             parallax_num++;
@@ -102,10 +102,10 @@ void FeatureManager::debugShow()
     for (auto &it : feature)
     {
         ROS_ASSERT(it.feature_per_frame.size() != 0);
-        ROS_ASSERT(it.start_frame >= 0);
+        ROS_ASSERT(it.start_slot >= 0);
         ROS_ASSERT(it.used_num >= 0);
 
-        ROS_DEBUG("%d,%d,%d ", it.feature_id, it.used_num, it.start_frame);
+        ROS_DEBUG("%d,%d,%d ", it.feature_id, it.used_num, it.start_slot);
         int sum = 0;
         for (auto &j : it.feature_per_frame)
         {
@@ -122,11 +122,11 @@ vector<pair<Vector3d, Vector3d>> FeatureManager::getCorresponding(int frame_coun
     vector<pair<Vector3d, Vector3d>> corres;
     for (auto &it : feature)
     {
-        if (it.start_frame <= frame_count_l && it.endFrame() >= frame_count_r)
+        if (it.start_slot <= frame_count_l && it.endFrame() >= frame_count_r)
         {
             Vector3d a = Vector3d::Zero(), b = Vector3d::Zero();
-            int idx_l = frame_count_l - it.start_frame;
-            int idx_r = frame_count_r - it.start_frame;
+            int idx_l = frame_count_l - it.start_slot;
+            int idx_r = frame_count_r - it.start_slot;
 
             a = it.feature_per_frame[idx_l].point;
 
@@ -144,11 +144,11 @@ void FeatureManager::setDepth(const VectorXd &x)
     for (auto &it_per_id : feature)
     {
         it_per_id.used_num = it_per_id.feature_per_frame.size();
-        if (!(it_per_id.used_num >= 2 && it_per_id.start_frame < WINDOW_SIZE - 2))
+        if (!(it_per_id.used_num >= 2 && it_per_id.start_slot < WINDOW_SIZE - 2))
             continue;
 
         it_per_id.estimated_depth = 1.0 / x(++feature_index);
-        //ROS_INFO("feature id %d , start_frame %d, depth %f ", it_per_id->feature_id, it_per_id-> start_frame, it_per_id->estimated_depth);
+        //ROS_INFO("feature id %d , start_slot %d, depth %f ", it_per_id->feature_id, it_per_id-> start_slot, it_per_id->estimated_depth);
         if (it_per_id.estimated_depth < 0)
         {
             it_per_id.solve_flag = 2;
@@ -175,7 +175,7 @@ void FeatureManager::clearDepth(const VectorXd &x)
     for (auto &it_per_id : feature)
     {
         it_per_id.used_num = it_per_id.feature_per_frame.size();
-        if (!(it_per_id.used_num >= 2 && it_per_id.start_frame < WINDOW_SIZE - 2))
+        if (!(it_per_id.used_num >= 2 && it_per_id.start_slot < WINDOW_SIZE - 2))
             continue;
         it_per_id.estimated_depth = 1.0 / x(++feature_index);
     }
@@ -188,7 +188,7 @@ VectorXd FeatureManager::getDepthVector()
     for (auto &it_per_id : feature)
     {
         it_per_id.used_num = it_per_id.feature_per_frame.size();
-        if (!(it_per_id.used_num >= 2 && it_per_id.start_frame < WINDOW_SIZE - 2))
+        if (!(it_per_id.used_num >= 2 && it_per_id.start_slot < WINDOW_SIZE - 2))
             continue;
 #if 1
         dep_vec(++feature_index) = 1. / it_per_id.estimated_depth;
@@ -199,25 +199,26 @@ VectorXd FeatureManager::getDepthVector()
     return dep_vec;
 }
 
-void FeatureManager::triangulate(Vector3d Ps[], Vector3d tic[], Matrix3d ric[])
+void FeatureManager::triangulate(StateManager &state)
 {
+    const ExtrinsicState ex0 = state.extrinsic(0);
     for (auto &it_per_id : feature)
     {
         it_per_id.used_num = it_per_id.feature_per_frame.size();
-        if (!(it_per_id.used_num >= 2 && it_per_id.start_frame < WINDOW_SIZE - 2))
+        if (!(it_per_id.used_num >= 2 && it_per_id.start_slot < WINDOW_SIZE - 2))
             continue;
 
         if (it_per_id.estimated_depth > 0)
             continue;
-        int imu_i = it_per_id.start_frame, imu_j = imu_i - 1;
+        int imu_i = it_per_id.start_slot, imu_j = imu_i - 1;
 
         ROS_ASSERT(NUM_OF_CAM == 1);
         Eigen::MatrixXd svd_A(2 * it_per_id.feature_per_frame.size(), 4);
         int svd_idx = 0;
 
         Eigen::Matrix<double, 3, 4> P0;
-        Eigen::Vector3d t0 = Ps[imu_i] + Rs[imu_i] * tic[0];
-        Eigen::Matrix3d R0 = Rs[imu_i] * ric[0];
+        Eigen::Vector3d t0 = state.positionAtSlot(imu_i) + state.rotationAtSlot(imu_i) * ex0.tic;
+        Eigen::Matrix3d R0 = state.rotationAtSlot(imu_i) * ex0.ric;
         P0.leftCols<3>() = Eigen::Matrix3d::Identity();
         P0.rightCols<1>() = Eigen::Vector3d::Zero();
 
@@ -225,8 +226,8 @@ void FeatureManager::triangulate(Vector3d Ps[], Vector3d tic[], Matrix3d ric[])
         {
             imu_j++;
 
-            Eigen::Vector3d t1 = Ps[imu_j] + Rs[imu_j] * tic[0];
-            Eigen::Matrix3d R1 = Rs[imu_j] * ric[0];
+            Eigen::Vector3d t1 = state.positionAtSlot(imu_j) + state.rotationAtSlot(imu_j) * ex0.tic;
+            Eigen::Matrix3d R1 = state.rotationAtSlot(imu_j) * ex0.ric;
             Eigen::Vector3d t = R0.transpose() * (t1 - t0);
             Eigen::Matrix3d R = R0.transpose() * R1;
             Eigen::Matrix<double, 3, 4> P;
@@ -279,8 +280,8 @@ void FeatureManager::removeBackShiftDepth(Eigen::Matrix3d marg_R, Eigen::Vector3
     {
         it_next++;
 
-        if (it->start_frame != 0)
-            it->start_frame--;
+        if (it->start_slot != 0)
+            it->start_slot--;
         else
         {
             Eigen::Vector3d uv_i = it->feature_per_frame[0].point;  
@@ -319,8 +320,8 @@ void FeatureManager::removeBack()
     {
         it_next++;
 
-        if (it->start_frame != 0)
-            it->start_frame--;
+        if (it->start_slot != 0)
+            it->start_slot--;
         else
         {
             it->feature_per_frame.erase(it->feature_per_frame.begin());
@@ -336,13 +337,13 @@ void FeatureManager::removeFront(int frame_count)
     {
         it_next++;
 
-        if (it->start_frame == frame_count)
+        if (it->start_slot == frame_count)
         {
-            it->start_frame--;
+            it->start_slot--;
         }
         else
         {
-            int j = WINDOW_SIZE - 1 - it->start_frame;
+            int j = WINDOW_SIZE - 1 - it->start_slot;
             if (it->endFrame() < frame_count - 1)
                 continue;
             it->feature_per_frame.erase(it->feature_per_frame.begin() + j);
@@ -356,8 +357,8 @@ double FeatureManager::compensatedParallax2(const FeaturePerId &it_per_id, int f
 {
     //check the second last frame is keyframe or not
     //parallax betwwen seconde last frame and third last frame
-    const FeaturePerFrame &frame_i = it_per_id.feature_per_frame[frame_count - 2 - it_per_id.start_frame];
-    const FeaturePerFrame &frame_j = it_per_id.feature_per_frame[frame_count - 1 - it_per_id.start_frame];
+    const FeaturePerFrame &frame_i = it_per_id.feature_per_frame[frame_count - 2 - it_per_id.start_slot];
+    const FeaturePerFrame &frame_j = it_per_id.feature_per_frame[frame_count - 1 - it_per_id.start_slot];
 
     double ans = 0;
     Vector3d p_j = frame_j.point;

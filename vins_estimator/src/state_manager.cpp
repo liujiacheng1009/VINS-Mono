@@ -64,11 +64,6 @@ void StateManager::initFromConfig()
     td_ = cfg.td();
 }
 
-void StateManager::copyExtrinsicRotations(std::vector<Matrix3d> &ric_out) const
-{
-    ric_out = ric_;
-}
-
 int StateManager::activeSlotLimit() const
 {
     return (slot_count_ >= window_size_) ? window_size_ : slot_count_;
@@ -98,39 +93,6 @@ void StateManager::unregisterSlot(int slot)
     frame_ids_[slot] = kInvalidFrameId;
 }
 
-FrameState StateManager::frameAtSlot(int slot) const
-{
-    FrameState frame;
-    frame.id = frame_ids_[slot];
-    frame.P = Ps_[slot];
-    frame.V = Vs_[slot];
-    frame.R = Rs_[slot];
-    frame.Ba = Bas_[slot];
-    frame.Bg = Bgs_[slot];
-    frame.header = Headers_[slot];
-    return frame;
-}
-
-void StateManager::setFrameAtSlot(int slot, const FrameState &frame)
-{
-    bindFrame(slot, frame.id, frame.header);
-    Ps_[slot] = frame.P;
-    Vs_[slot] = frame.V;
-    Rs_[slot] = frame.R;
-    Bas_[slot] = frame.Ba;
-    Bgs_[slot] = frame.Bg;
-}
-
-std::vector<Vector3d> StateManager::collectKeyframePositions() const
-{
-    std::vector<Vector3d> poses;
-    const int limit = activeSlotLimit();
-    poses.reserve(static_cast<size_t>(limit + 1));
-    for (int i = 0; i <= limit; i++)
-        poses.push_back(Ps_[i]);
-    return poses;
-}
-
 void StateManager::bindFrame(int slot, FrameId id, const SimpleHeader &header)
 {
     frame_ids_[slot] = id;
@@ -151,27 +113,6 @@ std::optional<int> StateManager::slotOf(FrameId id) const
     if (it == id_to_slot_.end())
         return std::nullopt;
     return it->second;
-}
-
-std::optional<FrameId> StateManager::frameIdAtStamp(double stamp_sec) const
-{
-    const int limit = activeSlotLimit();
-    for (int i = 0; i <= limit; i++)
-    {
-        if (std::abs(Headers_[i].stamp.toSec() - stamp_sec) < 1e-9)
-            return frame_ids_[i];
-    }
-    return std::nullopt;
-}
-
-FrameId StateManager::latestFrameId() const
-{
-    return frame_ids_[latestSlot()];
-}
-
-FrameId StateManager::oldestFrameId() const
-{
-    return frame_ids_[0];
 }
 
 void StateManager::snapshotOldestFrame()
@@ -217,11 +158,6 @@ void StateManager::clearImuBufferAtSlot(int slot)
 std::shared_ptr<Integrator> &StateManager::preIntegrationAtSlot(int slot)
 {
     return imu_data_[slot].pre_integration;
-}
-
-FrameImuData &StateManager::imuDataAtSlot(int slot)
-{
-    return imu_data_[slot];
 }
 
 void StateManager::initializeFrameAtSlot(int slot, FrameId id, const SimpleHeader &header,
@@ -279,7 +215,7 @@ void StateManager::syncToParameters()
         para_td_[0] = td_;
 }
 
-void StateManager::applyYawAlignment(const Vector3d &origin_P0, const Vector3d &origin_R0_ypr)
+void StateManager::applyPosYawAlignment(const Vector3d &origin_P0, const Vector3d &origin_R0_ypr)
 {
     Vector3d origin_R00 = Utility::R2ypr(Quaterniond(para_pose_[0][6],
                                                       para_pose_[0][3],
@@ -334,7 +270,7 @@ void StateManager::syncFromParameters(const SyncFromOptions &opts)
     if (opts.align_origin_R0.has_value())
         origin_R0 = Utility::R2ypr(*opts.align_origin_R0);
 
-    applyYawAlignment(origin_P0, origin_R0);
+    applyPosYawAlignment(origin_P0, origin_R0);
 
     for (int i = 0; i < static_cast<int>(para_ex_pose_.size()); i++)
     {
@@ -461,35 +397,6 @@ void StateManager::slideWindow(SlideMode mode, const Vector3d &acc_0, const Vect
     }
 }
 
-int StateManager::activeFrameCount() const
-{
-    return (slot_count_ >= window_size_) ? (window_size_ + 1) : (slot_count_ + 1);
-}
-
-int StateManager::requireSlot(FrameId id) const
-{
-    const auto slot = slotOf(id);
-    if (!slot.has_value())
-        throw std::out_of_range("FrameId not in active window");
-    return *slot;
-}
-
-FrameState StateManager::frameState(FrameId id) const
-{
-    const int slot = requireSlot(id);
-    return frameAtSlot(slot);
-}
-
-FrameImuData &StateManager::imuData(FrameId id)
-{
-    return imu_data_[requireSlot(id)];
-}
-
-const FrameImuData &StateManager::imuData(FrameId id) const
-{
-    return imu_data_[requireSlot(id)];
-}
-
 Vector3d &StateManager::positionAtSlot(int slot) { return Ps_[slot]; }
 Vector3d &StateManager::velocityAtSlot(int slot) { return Vs_[slot]; }
 Matrix3d &StateManager::rotationAtSlot(int slot) { return Rs_[slot]; }
@@ -497,48 +404,6 @@ Vector3d &StateManager::accBiasAtSlot(int slot) { return Bas_[slot]; }
 Vector3d &StateManager::gyrBiasAtSlot(int slot) { return Bgs_[slot]; }
 const Vector3d &StateManager::positionAtSlot(int slot) const { return Ps_[slot]; }
 const Matrix3d &StateManager::rotationAtSlot(int slot) const { return Rs_[slot]; }
-
-Vector3d &StateManager::position(FrameId id) { return Ps_[requireSlot(id)]; }
-Matrix3d &StateManager::rotation(FrameId id) { return Rs_[requireSlot(id)]; }
-Vector3d &StateManager::velocity(FrameId id) { return Vs_[requireSlot(id)]; }
-Vector3d &StateManager::accBias(FrameId id) { return Bas_[requireSlot(id)]; }
-Vector3d &StateManager::gyrBias(FrameId id) { return Bgs_[requireSlot(id)]; }
-
-double *StateManager::poseParameter(FrameId id) { return poseParameter(requireSlot(id)); }
-double *StateManager::speedBiasParameter(FrameId id) { return speedBiasParameter(requireSlot(id)); }
-
-std::shared_ptr<Integrator> &StateManager::preIntegration(FrameId id)
-{
-    return preIntegrationAtSlot(requireSlot(id));
-}
-
-void StateManager::pushImuSample(FrameId id, double dt, const Vector3d &acc, const Vector3d &gyr)
-{
-    pushImuSampleAtSlot(requireSlot(id), dt, acc, gyr);
-}
-
-void StateManager::mergeImuBuffer(FrameId from_id, FrameId to_id)
-{
-    const int from_slot = requireSlot(from_id);
-    const int to_slot = requireSlot(to_id);
-    for (unsigned int i = 0; i < imu_data_[from_slot].dt_buf.size(); i++)
-    {
-        const double tmp_dt = imu_data_[from_slot].dt_buf[i];
-        const Vector3d tmp_acc = imu_data_[from_slot].linear_acceleration_buf[i];
-        const Vector3d tmp_gyr = imu_data_[from_slot].angular_velocity_buf[i];
-        imu_data_[to_slot].pre_integration->process(tmp_dt, tmp_acc, tmp_gyr);
-        imu_data_[to_slot].dt_buf.push_back(tmp_dt);
-        imu_data_[to_slot].linear_acceleration_buf.push_back(tmp_acc);
-        imu_data_[to_slot].angular_velocity_buf.push_back(tmp_gyr);
-    }
-    clearImuBufferAtSlot(from_slot);
-}
-
-void StateManager::propagateImu(FrameId id, double dt, const Vector3d &acc, const Vector3d &gyr,
-                                const Vector3d &acc_prev, const Vector3d &gyr_prev, const Vector3d &gravity)
-{
-    propagateImuAtSlot(requireSlot(id), dt, acc, gyr, acc_prev, gyr_prev, gravity);
-}
 
 ParameterBlocks StateManager::parameterBlocks()
 {
@@ -562,10 +427,4 @@ ExtrinsicState StateManager::extrinsic(int cam_id) const
     ex.ric = ric_[cam_id];
     ex.tic = tic_[cam_id];
     return ex;
-}
-
-void StateManager::setExtrinsic(int cam_id, const Matrix3d &ric, const Vector3d &tic)
-{
-    ric_[cam_id] = ric;
-    tic_[cam_id] = tic;
 }

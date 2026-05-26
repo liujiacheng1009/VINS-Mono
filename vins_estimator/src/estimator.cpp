@@ -10,9 +10,6 @@ Estimator::Estimator()
 void Estimator::setParameter()
 {
     state_.initFromConfig();
-    std::vector<Matrix3d> ric;
-    state_.copyExtrinsicRotations(ric);
-    f_manager.setRic(ric);
     ProjectionFactor::sqrt_info = focalLength() / 1.5 * Matrix2d::Identity();
     g = vinsParameters().gravity();
 }
@@ -43,9 +40,6 @@ void Estimator::clearState()
     g = vinsParameters().gravity();
 
     state_.initFromConfig();
-    std::vector<Matrix3d> ric;
-    state_.copyExtrinsicRotations(ric);
-    f_manager.setRic(ric);
     f_manager.clearState();
 
     failure_occur = 0;

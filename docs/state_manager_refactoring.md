@@ -144,7 +144,7 @@ struct ImageFrameInput {
 **协作方式**：
 
 - `Estimator::processImage` 根据 `solver_flag` 决定是否调用优化；根据 `marginalization_flag` 调用 `state_.slideWindow(mode)`。
-- `Estimator::processIMU` 持有 `g`、`first_imu`，调用 `state_.propagateImu(..., g)` 时显式传入重力。
+- `Estimator::processIMU` 持有 `g`、`first_imu`，调用 `state_.propagateImuAtSlot(slot_count_, ..., g)` 时显式传入重力（按槽位积分，不用 `FrameId`）。
 - `Estimator::optimization` 在 `syncFromParameters` 前，若 `failure_occur` 为真，将 `last_R0/last_P0` 作为 yaw 对齐原点**通过参数传入**（见 §4.4），而非由 StateManager 读取 `failure_occur`。
 
 ### 2.6 边缘化 prior 缓存（纳入 StateManager 或 Estimator）
@@ -417,7 +417,7 @@ void   setTimeDelay(double td);
 | `timeDelay()` | `td` | 供 `ProjectionFactor` 使用 |
 | `setExtrinsicsFromConfig()` | `Estimator` 构造函数 / `setParameter` | 从标定文件加载 |
 
-> **`g` 不在 StateManager**：重力由 `Estimator` 从全局 `G` 加载，经 `propagateImu(..., const Vector3d& gravity)` 传入。
+> **`g` 不在 StateManager**：重力由 `Estimator` 从 `vinsParameters().gravity()` 加载，经 `propagateImuAtSlot(..., const Vector3d& gravity)` 传入。
 
 ### 4.4 Ceres 参数块桥接
 
@@ -458,7 +458,7 @@ double* timeDelayParameter();                  // para_Td[0]
 2. Euler 奇异点处理（pitch ≈ ±90° 时改用 `Rs[0] * q^T`）。
 3. `opts.align_origin_*` 有值时以其作为对齐原点（对应 Estimator 在 `failure_occur` 时传入 `last_R0/P0`）。
 
-建议将 yaw 对齐抽取为私有方法 `applyYawAlignment()`，`syncFromParameters()` 调用之。迁移时可删除 `double2vector()` / `optimization()` 中 `relocalization_info` 相关死分支。
+建议将位姿规范固定抽取为私有方法 `applyPosYawAlignment()`（锚定 slot-0 的位置与 yaw），`syncFromParameters()` 调用之。迁移时可删除 `double2vector()` / `optimization()` 中 `relocalization_info` 相关死分支。
 
 ### 4.5 滑动窗口搬移
 
@@ -505,9 +505,7 @@ void clearImuBufferAtSlot(int slot);
 void mergeImuBuffer(FrameId from_id, FrameId to_id);  // slideWindowNew
 
 // 帧间 IMU 传播：gravity 由 Estimator 传入（StateManager 不持有 g）
-void propagateImu(FrameId id, double dt, const Vector3d& acc, const Vector3d& gyr,
-                  const Vector3d& acc_prev, const Vector3d& gyr_prev,
-                  const Vector3d& gravity);
+// processIMU 使用 propagateImuAtSlot(slotCount(), ...)，不用 FrameId 版
 void propagateImuAtSlot(int slot, double dt, ..., const Vector3d& gravity);
 
 // acc_0/gyr_0/first_imu 保留在 Estimator；StateManager 不暴露 firstImuFlag
@@ -516,7 +514,7 @@ void propagateImuAtSlot(int slot, double dt, ..., const Vector3d& gravity);
 | 接口 | 对应现有逻辑 | 说明 |
 |------|-------------|------|
 | `preIntegration(id)` | `pre_integrations[slot]` | `IMUFactor` 构造可改为传 `FrameId`，内部 `slotOf` |
-| `propagateImu(id)` | `processIMU()` | 通过 `frameState(id)` 读写 P/V/R/Ba/Bg |
+| `propagateImuAtSlot(slot)` | `processIMU()` | `slot = slotCount()`；两帧图之间的 IMU 积在当前槽，不依赖 `FrameId` |
 | `mergeImuBuffer(from, to)` | `slideWindow` MARGIN_SECOND_NEW | 用 FrameId 表达「末帧合并到前一帧」，避免 slot 下标歧义 |
 
 ### 4.7 帧间参考快照
@@ -589,7 +587,7 @@ const Matrix3d* rotationsData() const;   // Rs
 
 | 调用方 | 使用的 StateManager 接口 | 说明 |
 |--------|-------------------------|------|
-| `Estimator::processIMU` | `propagateImu(..., g)`, `preIntegration`, `pushImuSample` | Estimator 持有 `g`/`first_imu`/`acc_0`/`gyr_0` |
+| `Estimator::processIMU` | `propagateImuAtSlot`, `preIntegration`, `pushImuSample` | Estimator 持有 `g`/`first_imu`/`acc_0`/`gyr_0` |
 | 输入打包段 | `++input_frame_seq` → `ImageFrameInput.id` / `header.seq` | **FrameId 唯一赋值点** |
 | `Estimator::processImage` | `bindFrame(slot, id, header)`, `slideWindow(mode)` | 从 `input` 取 id，不内部递增 |
 | `Estimator::optimization` | `syncToParameters`, `parameterBlocks`, `syncFromParameters` | Ceres 求解前后同步 |
@@ -621,7 +619,7 @@ const Matrix3d* rotationsData() const;   // Rs
 ### Phase 3：窗口搬移与 IMU 缓冲（中风险）
 
 1. 迁移 `pre_integrations/dt_buf/acc_buf/gyr_buf/acc_0/gyr_0`。
-2. 实现 `slideWindowOld/New`、`propagateImu`、`mergeImuBuffer`。
+2. 实现 `slideWindowOld/New`、`propagateImuAtSlot`、`mergeImuBuffer`。
 3. `Estimator::slideWindow/processIMU` 委托给 `StateManager`。
 
 ### Phase 4：外参、边缘化 prior（低风险）
@@ -767,7 +765,7 @@ auto &cfg = vinsParameters();        // 运行期只读/可写访问
 | `frame_count` | `slotCount()` / `setSlotCount()` |
 | `ric[i]`, `tic[i]` | `extrinsic(i).ric/tic` |
 | `td` | `timeDelay()` |
-| `g` | **Estimator** 成员，经 `propagateImu` 传入 |
+| `g` | **Estimator** 成员，经 `propagateImuAtSlot` 传入 |
 | `para_Pose[i]` | `poseParameter(i)` |
 | `para_SpeedBias[i]` | `speedBiasParameter(i)` |
 | `vector2double()` | `syncToParameters()` |
@@ -793,16 +791,17 @@ auto &cfg = vinsParameters();        // 运行期只读/可写访问
 | **Phase 0** 删除 `Ap/bp/backup_*` | ✅ | `estimator.h` 已无该成员 |
 | **Phase 0/5** 删除回环/重定位遗留 | ✅ | `vins_estimator` 内无 `relocalization_info` / `setReloFrame` 等 |
 | **Phase 1** `FrameId`、`ImageFrameInput`、输入层赋 ID | ✅ | `utility/simple_types.h`、`utility/image_frame_input.h`、`simulation_standalone.cpp` |
-| **Phase 1** `StateManager` 窗口状态、`bindFrame`、`frameState`/`frameAtSlot` | ✅ | `state_manager.h/.cpp` |
+| **Phase 1** `StateManager` 窗口状态、`bindFrame`、`slotOf`/`contains` | ✅ | 已移除未使用的 `FrameState`/`frameAtSlot`/`frameState` 等过渡 API |
 | **Phase 1** `Estimator` 持有 `state_` | ✅ | `estimator.h` |
-| **Phase 2** `para_*`、`syncTo/FromParameters`、`applyYawAlignment` | ✅ | `syncStateToParameters` / `syncParametersToState` 为 thin wrapper |
+| **Phase 2** `para_*`、`syncTo/FromParameters`、`applyPosYawAlignment` | ✅ | `syncStateToParameters` / `syncParametersToState` 为 thin wrapper |
 | **Phase 2** `parameterBlocks()` | ✅ | 已实现；`optimization()` 仍直接调 `poseParameter` 等（等价） |
-| **Phase 3** IMU 缓冲、`slideWindow*`、`propagateImu`、`mergeImuBuffer` | ✅ | |
+| **Phase 3** IMU 缓冲、`slideWindow*`、`propagateImuAtSlot` | ✅ | `mergeImuBuffer` 已内联于 `slideWindowNew`，独立函数已删 |
 | **Phase 4** `ric/tic/td`、边缘化 prior、`extrinsic()` | ✅ | |
 | **Phase 4** 删除 `Estimator` 已迁移成员 | ✅ | 窗口/Ceres/IMU 状态均在 `StateManager` |
 | **Phase 5** 删除 `key_poses` | ✅ | |
 | **Phase 5** `FeatureManager::triangulate(StateManager&)` | ✅ | `feature_manager.cpp` |
-| **Phase 5** 消除 `positionsData()` 过渡接口 | ✅ | 未引入；通过 `positionAtSlot` / `frameState` / `friend` 访问 |
+| **Phase 5** 消除 `positionsData()` 过渡接口 | ✅ | 未引入；通过 `positionAtSlot` 等 slot 访问器 |
+| **死代码清理** `FeatureManager` / `StateManager` / `VinsParameters` | ✅ | 删除 `debugShow`、`getCorresponding`、`clearDepth`、`removeOutlier`；FrameId 便捷访问器；未读配置项 `imu_topic`/`ex_calib`/`bias_*_threshold` |
 | **Phase 5** 窗口数组私有化 | ✅ | `Ps_/Vs_/...` 私有；无 `friend`，经公开访问器 |
 | **§4.7** `backRotation/Position`、`last*` 快照 | ✅ | |
 | **§九** 单元测试 | ✅ | `state_manager_smoke_test` + `ctest` 仿真指标回归 |

@@ -9,7 +9,6 @@
 #include <eigen3/Eigen/Dense>
 #include <memory>
 #include <optional>
-#include <stdexcept>
 #include <unordered_map>
 #include <vector>
 
@@ -27,17 +26,6 @@ struct FrameImuData
     std::vector<double> dt_buf;
     std::vector<Vector3d> linear_acceleration_buf;
     std::vector<Vector3d> angular_velocity_buf;
-};
-
-struct FrameState
-{
-    FrameId id = kInvalidFrameId;
-    Vector3d P = Vector3d::Zero();
-    Vector3d V = Vector3d::Zero();
-    Matrix3d R = Matrix3d::Identity();
-    Vector3d Ba = Vector3d::Zero();
-    Vector3d Bg = Vector3d::Zero();
-    SimpleHeader header;
 };
 
 struct ExtrinsicState
@@ -60,14 +48,11 @@ class StateManager
   public:
     StateManager();
 
-    void copyExtrinsicRotations(std::vector<Matrix3d> &ric_out) const;
-
     void clear();
     void initFromConfig();
 
     int slotCount() const { return slot_count_; }
     void setSlotCount(int count) { slot_count_ = count; }
-    int activeFrameCount() const;
 
     int windowSize() const { return window_size_; }
     int latestSlot() const;
@@ -76,17 +61,6 @@ class StateManager
 
     bool contains(FrameId id) const;
     std::optional<int> slotOf(FrameId id) const;
-    std::optional<FrameId> frameIdAtStamp(double stamp_sec) const;
-
-    FrameId latestFrameId() const;
-    FrameId oldestFrameId() const;
-
-    FrameState frameAtSlot(int slot) const;
-    void setFrameAtSlot(int slot, const FrameState &frame);
-
-    FrameState frameState(FrameId id) const;
-    FrameImuData &imuData(FrameId id);
-    const FrameImuData &imuData(FrameId id) const;
 
     Vector3d &positionAtSlot(int slot);
     Vector3d &velocityAtSlot(int slot);
@@ -95,14 +69,6 @@ class StateManager
     Vector3d &gyrBiasAtSlot(int slot);
     const Vector3d &positionAtSlot(int slot) const;
     const Matrix3d &rotationAtSlot(int slot) const;
-
-    Vector3d &position(FrameId id);
-    Matrix3d &rotation(FrameId id);
-    Vector3d &velocity(FrameId id);
-    Vector3d &accBias(FrameId id);
-    Vector3d &gyrBias(FrameId id);
-
-    std::vector<Vector3d> collectKeyframePositions() const;
 
     void snapshotOldestFrame();
     void updateKeyframeSnapshot();
@@ -126,8 +92,6 @@ class StateManager
 
     void propagateImuAtSlot(int slot, double dt, const Vector3d &acc, const Vector3d &gyr,
                             const Vector3d &acc_prev, const Vector3d &gyr_prev, const Vector3d &gravity);
-    void propagateImu(FrameId id, double dt, const Vector3d &acc, const Vector3d &gyr,
-                    const Vector3d &acc_prev, const Vector3d &gyr_prev, const Vector3d &gravity);
 
     void syncToParameters();
     void syncFromParameters(const SyncFromOptions &opts = {});
@@ -139,13 +103,7 @@ class StateManager
     double *featureParameter(int feature_idx);
     double *timeDelayParameter();
 
-    double *poseParameter(FrameId id);
-    double *speedBiasParameter(FrameId id);
-
     ExtrinsicState extrinsic(int cam_id) const;
-    void setExtrinsic(int cam_id, const Matrix3d &ric, const Vector3d &tic);
-    Matrix3d cameraRotation(int cam_id) const { return ric_[cam_id]; }
-    Vector3d cameraTranslation(int cam_id) const { return tic_[cam_id]; }
 
     double timeDelay() const { return td_; }
     void setTimeDelay(double td) { td_ = td; }
@@ -155,12 +113,8 @@ class StateManager
     void clearMarginalizationPrior();
 
     std::shared_ptr<Integrator> &preIntegrationAtSlot(int slot);
-    std::shared_ptr<Integrator> &preIntegration(FrameId id);
-    FrameImuData &imuDataAtSlot(int slot);
     void pushImuSampleAtSlot(int slot, double dt, const Vector3d &acc, const Vector3d &gyr);
-    void pushImuSample(FrameId id, double dt, const Vector3d &acc, const Vector3d &gyr);
     void clearImuBufferAtSlot(int slot);
-    void mergeImuBuffer(FrameId from_id, FrameId to_id);
 
     std::shared_ptr<Integrator> &tmpPreIntegration() { return tmp_pre_integration_; }
 
@@ -170,13 +124,13 @@ class StateManager
                                const Vector3d &acc_0, const Vector3d &gyr_0);
 
   private:
-    int requireSlot(FrameId id) const;
     int activeSlotLimit() const;
 
     void allocateStorage();
     void rebuildIdToSlot();
     void unregisterSlot(int slot);
-    void applyYawAlignment(const Vector3d &origin_P0, const Vector3d &origin_R0_ypr);
+    /** Write para_* back to Ps_/Rs_/Vs_/bias; anchor slot-0 position and yaw at origin_P0 / origin_R0_ypr. */
+    void applyPosYawAlignment(const Vector3d &origin_P0, const Vector3d &origin_R0_ypr);
 
     int window_size_ = 10;
     int slot_count_ = 0;

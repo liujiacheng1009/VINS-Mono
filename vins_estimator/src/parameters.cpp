@@ -51,10 +51,6 @@ void VinsParameters::loadFromConfig(const std::string &config_file)
         setMaxFeatureCount(10);
     }
 
-    std::string imu_topic;
-    fsSettings["imu_topic"] >> imu_topic;
-    setImuTopic(std::move(imu_topic));
-
     setSolverTime(fsSettings["max_solver_time"]);
     setNumIterations(fsSettings["max_num_iterations"]);
     double min_parallax = fsSettings["keyframe_parallax"];
@@ -88,15 +84,11 @@ void VinsParameters::loadFromConfig(const std::string &config_file)
         ROS_WARN("have no prior about extrinsic param, calibrate extrinsic param");
         for (int c = 0; c < numOfCam(); ++c)
             addExtrinsic(Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero());
-        setExCalibResultPath(output_path + "/extrinsic_parameter.csv");
     }
     else
     {
         if (estimate_extrinsic == 1)
-        {
             ROS_WARN(" Optimize extrinsic param around initial guess!");
-            setExCalibResultPath(output_path + "/extrinsic_parameter.csv");
-        }
         if (estimate_extrinsic == 0)
             ROS_WARN(" fix extrinsic param ");
 
@@ -120,8 +112,6 @@ void VinsParameters::loadFromConfig(const std::string &config_file)
     }
 
     setInitDepth(5.0);
-    setBiasAccThreshold(0.1);
-    setBiasGyrThreshold(0.1);
 
     setTd(fsSettings["td"]);
     setEstimateTd(fsSettings["estimate_td"]);

@@ -22,6 +22,7 @@ add_executable(imu_factor_test
     imu_factor_test.cpp
     ${VINS_SRC_DIR}/factor/imu_factor.cpp
     ${VINS_SRC_DIR}/parameters.cpp
+    ${VINS_SRC_DIR}/cam_chain.cpp
     ${VINS_SRC_DIR}/utility/utility.cpp
 )
 
@@ -48,6 +49,7 @@ add_executable(projection_factor_test
     projection_factor_test.cpp
     ${VINS_SRC_DIR}/factor/projection_factor.cpp
     ${VINS_SRC_DIR}/parameters.cpp
+    ${VINS_SRC_DIR}/cam_chain.cpp
     ${VINS_SRC_DIR}/utility/utility.cpp
 )
 

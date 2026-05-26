@@ -17,6 +17,7 @@ add_executable(vins_simulation_standalone
     simulation_standalone.cpp
     ../data_generator/src/data_generator.cpp
     ../vins_estimator/src/parameters.cpp
+    ../vins_estimator/src/cam_chain.cpp
     ../vins_estimator/src/estimator.cpp
     ../vins_estimator/src/state_manager.cpp
     ../vins_estimator/src/feature_manager.cpp
@@ -46,6 +47,7 @@ add_executable(state_manager_smoke_test
     state_manager_smoke_test.cpp
     ../vins_estimator/src/state_manager.cpp
     ../vins_estimator/src/parameters.cpp
+    ../vins_estimator/src/cam_chain.cpp
     ../vins_estimator/src/utility/utility.cpp
     ../vins_estimator/src/factor/imu_factor.cpp
     ../vins_estimator/src/factor/marginalization_factor.cpp

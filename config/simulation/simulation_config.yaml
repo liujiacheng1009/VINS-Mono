@@ -4,6 +4,7 @@
 imu_topic: "/data_generator/imu"
 image_topic: "/data_generator/image"
 output_path: "/tmp/vins_mono_output/"
+# image size also taken from cam_chain cam0 when cam_chain_file loads
 image_height: 480
 image_width: 752
 
@@ -29,9 +30,10 @@ extrinsicTranslation: !!opencv-matrix
 
 # sliding window and camera layout
 window_size: 10           # number of keyframes in the optimization window (slots 0..window_size)
-num_of_cam: 1             # number of cameras (mono=1; stereo would use 2 with per-camera extrinsics)
+num_of_cam: 1             # number of cameras (mono=1 uses cam0 only; stereo: 2 + cam_chain extrinsics)
+cam_chain_file: "cam_chain.yaml"  # Kalibr chain next to this file; intrinsics from cam0; IMU–cam0 stays below
 max_feature_count: 1000   # max landmarks in Ceres parameter pool
-focal_length: 460.0       # pixel focal length for parallax threshold and projection sqrt_info
+# focal_length: from cam_chain cam0 intrinsics (fu+fv)/2
 
 #optimization parameters
 max_solver_time: 0.04  # max solver itration time (ms), to guarantee real time

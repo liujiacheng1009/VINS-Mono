@@ -1,0 +1,31 @@
+# Kalibr cam_chain for VINS-Mono simulation (stereo reference).
+# Intrinsics / resolution match config/simulation/simulation_config.yaml:
+#   image_width=752, image_height=480, focal_length=460 (fu=fv).
+# Stereo baseline: 6 cm along +X in cam0 (cam1 to the right of cam0).
+# Distortion is zero (ideal pinhole simulation; model kept for Kalibr toolchain compatibility).
+#
+# IMU–camera extrinsics remain in simulation_config.yaml (extrinsicRotation / extrinsicTranslation).
+# For num_of_cam: 2, load per-camera IMU extrinsics separately when extending the simulator.
+
+cam0:
+  cam_overlaps: [1]
+  camera_model: pinhole
+  distortion_coeffs: [0.0, 0.0, 0.0, 0.0]
+  distortion_model: equidistant
+  intrinsics: [460.0, 460.0, 376.0, 240.0]
+  resolution: [752, 480]
+  rostopic: /cam0/image_raw
+
+cam1:
+  T_cn_cnm1:
+  - [1.0, 0.0, 0.0, 0.06]
+  - [0.0, 1.0, 0.0, 0.0]
+  - [0.0, 0.0, 1.0, 0.0]
+  - [0.0, 0.0, 0.0, 1.0]
+  cam_overlaps: [0]
+  camera_model: pinhole
+  distortion_coeffs: [0.0, 0.0, 0.0, 0.0]
+  distortion_model: equidistant
+  intrinsics: [460.0, 460.0, 376.0, 240.0]
+  resolution: [752, 480]
+  rostopic: /cam1/image_raw

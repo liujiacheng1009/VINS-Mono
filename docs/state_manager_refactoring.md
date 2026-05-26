@@ -45,14 +45,14 @@
 
 | 成员 | 类型 | 说明 |
 |------|------|------|
-| **`frame_id`（新增）** | `FrameId`（`int64_t`） | 每帧**全局唯一、单调递增**的语义 ID；随帧数据在窗口内搬移，边缘化后失效 |
+| **`FrameId`（新增）** | `FrameId`（`int64_t`） | 在**输入打包段**赋值的全局帧序号；写入 `FrameState.id` 后随窗口搬移；边缘化出窗后仅从 `id_to_slot_` 移除 |
 | `Ps[]` | `Vector3d[WINDOW_SIZE+1]` | 各帧 IMU 系位置 |
 | `Vs[]` | `Vector3d[WINDOW_SIZE+1]` | 各帧 IMU 系速度 |
 | `Rs[]` | `Matrix3d[WINDOW_SIZE+1]` | 各帧 IMU 系旋转 |
 | `Bas[]` | `Vector3d[WINDOW_SIZE+1]` | 加速度计 bias |
 | `Bgs[]` | `Vector3d[WINDOW_SIZE+1]` | 陀螺仪 bias |
 | `Headers[]` | `SimpleHeader[WINDOW_SIZE+1]` | 各帧图像时间戳；其中 `header.frame_id` 为坐标系名字符串（如 `"world"`），**与** `FrameId` **不同** |
-| `frame_count` | `int` | 当前窗口**槽位**有效帧数（0 … WINDOW_SIZE）；重构后拆分为 `slot_count` + `FrameId` 分配器 |
+| `frame_count` | `int` | 当前窗口**槽位**有效帧数（0 … WINDOW_SIZE）；重构后改为 `slot_count`，与 `FrameId` 解耦 |
 
 #### 槽位索引 vs FrameId
 
@@ -63,9 +63,38 @@
 | 概念 | 类型 | 生命周期 | 用途 |
 |------|------|----------|------|
 | **槽位索引 `slot`** | `int`，0 … WINDOW_SIZE | 随 `slideWindow` 左移/合并而改变 | Ceres `para_Pose[slot]`、IMU 因子 `i/j` 下标、数组存储 |
-| **帧 ID `FrameId`** | `int64_t`，单调递增 | 帧进入窗口时分配；边缘化出窗后不再可查 | 业务层按「哪一帧」聚合访问 P/V/R/bias/header/预积分/IMU 缓冲 |
+| **帧 ID `FrameId`** | `int64_t`，单调递增 | **输入打包时**由数据源赋值；进入窗口后写入 `FrameState`；出窗后不可查 | 跨模块按「哪一帧」访问 P/V/R/bias/特征/日志 |
 
-`StateManager` 维护 `slot → FrameState` 存储，以及活跃窗口内的 `FrameId → slot` 反查表；**推荐对外主接口以 `FrameId` 访问**，槽位接口保留给 Ceres/因子等底层。
+#### FrameId 来源：输入打包段（非 StateManager 分配）
+
+`FrameId` **不应**在 `StateManager::allocateFrameId()` 或 `processImage` 内部递增生成，而应在**传感器数据进入 Estimator 之前**的打包层确定，例如：
+
+- `standalone/simulation_standalone.cpp`：仿真循环每输出一帧图像特征时递增 `frame_seq`；
+- 未来的 rosbag / 真机适配层：使用消息序号、相机触发计数或时间对齐后的统一帧号。
+
+建议在 `simple_types.h` 扩展输入载体（二选一）：
+
+```cpp
+// 方案 A：扩展 SimpleHeader（最小改动）
+struct SimpleHeader {
+    SimpleTime stamp;
+    std::string frame_id;       // 坐标系名，如 "world"（与 FrameId 无关）
+    FrameId seq = kInvalidFrameId;  // 输入打包段写入，单调递增
+};
+
+// 方案 B：显式打包结构（推荐，语义更清晰）
+struct ImageFrameInput {
+    FrameId id;                 // 打包段赋值
+    SimpleHeader header;        // stamp + frame_id
+    std::map<int, std::vector<std::pair<int, Eigen::Matrix<double, 7, 1>>>> features;
+};
+```
+
+`Estimator::processImage` 签名可演进为接收 `ImageFrameInput`（或从 `header.seq` 读取 `FrameId`），再调用 `StateManager::bindFrame(slot, input.id, input.header)`。**StateManager 只登记、不发明 ID**。
+
+`StateManager` 维护 `slot → FrameState` 与活跃窗口内 `FrameId → slot` 反查表；**推荐对外以 `FrameId` 访问**，槽位接口保留给 Ceres/因子。
+
+> **IMU 与 FrameId 的时序**：`processIMU` 在图像到达前往往只对应「当前积分槽位」，此时尚无 `FrameId`；`FrameId` 在 `processImage` 绑定到该槽位后，该槽位上的预积分缓冲才可通过 `preIntegration(id)` 访问。
 
 ### 2.2 外参与时延标定
 
@@ -118,14 +147,18 @@
 - `Estimator::processIMU` 持有 `g`、`first_imu`，调用 `state_.propagateImu(..., g)` 时显式传入重力。
 - `Estimator::optimization` 在 `syncFromParameters` 前，若 `failure_occur` 为真，将 `last_R0/last_P0` 作为 yaw 对齐原点**通过参数传入**（见 §4.4），而非由 StateManager 读取 `failure_occur`。
 
-### 2.6 边缘化辅助与边缘化缓存
+### 2.6 边缘化 prior 缓存（纳入 StateManager 或 Estimator）
+
+滑动窗口挤掉老帧后，需把被移除变量上的约束信息压缩成**先验因子**，在下一轮 Ceres 优化中继续约束剩余变量。当前由 `MarginalizationInfo` 在 `marginalize()` 内组装正规方程 \(A,b\) 并完成 Schur complement；`Estimator` 只保存结果：
 
 | 成员 | 类型 | 说明 |
 |------|------|------|
-| `Ap[]`, `bp[]` | `MatrixXd[2]`, `VectorXd[2]` | 边缘化正规方程分块 |
-| `backup_A`, `backup_b` | `MatrixXd`, `VectorXd` | 正规方程备份 |
-| `last_marginalization_info` | `MarginalizationInfo*` | 上一轮边缘化 prior |
-| `last_marginalization_parameter_blocks` | `vector<double*>` | prior 关联的参数块地址 |
+| `last_marginalization_info` | `MarginalizationInfo*` | 上一轮边缘化产出的线性先验（`linearized_jacobians` / `linearized_residuals` 等），下一轮包装为 `MarginalizationFactor` 加入 `Problem` |
+| `last_marginalization_parameter_blocks` | `vector<double*>` | 该先验连接的 Ceres 参数块指针；`slideWindow` 后通过 `addr_shift` 映射到新槽位地址 |
+
+`clearState()` / 失败重启时需 `delete last_marginalization_info` 并清空 `parameter_blocks`。
+
+> **归属建议**：与 `para_*` 指针生命周期强绑定，可放在 StateManager（§4.8）或 `Estimator` 内单独持有；**不要**与 §2.10 的废弃成员 `Ap/bp/backup_*` 混淆。
 
 ### 2.7 帧间参考快照（失败检测 / 边缘化）
 
@@ -165,6 +198,21 @@
 
 **重构建议**：StateManager 不管理上述成员；Phase 5 或独立 PR 中直接从 `Estimator` 删除回环相关代码（含 `optimization()` 中的 `relocalization_info` 分支和 `double2vector()` 中的漂移校正逻辑），而非迁移进 StateManager。
 
+### 2.10 遗留代码：正规方程工作区 `Ap` / `bp` / `backup_*`（可删除）
+
+| 成员 | 类型 | 现状 |
+|------|------|------|
+| `Ap[2]`, `bp[2]` | `MatrixXd`, `VectorXd` | 仅在 `estimator.h` 声明，**全仓库无读写** |
+| `backup_A`, `backup_b` | `MatrixXd`, `VectorXd` | 同上 |
+
+**来源**：早期实现在 `Estimator` 内直接维护边缘化正规方程分块与备份；现已在 `MarginalizationInfo::marginalize()` 中使用**局部变量** `A`、`b` 完成组装与 Schur（见 `marginalization_factor.cpp`），不再需要 `Estimator` 上的工作区。
+
+**重构建议**：
+
+- **不纳入** StateManager，**不迁移**。
+- 建议在 **Phase 0**（Phase 1 之前）从 `estimator.h` **直接删除** 这四个成员（零行为变更）。
+- 文档 §4.8 **不提供** `marginalizationA()` / `backupA()` 等接口。
+
 ---
 
 ## 三、核心数据结构建议
@@ -177,7 +225,7 @@ constexpr FrameId kInvalidFrameId = -1;
 
 // 单帧完整状态（与槽位解耦的语义单元）
 struct FrameState {
-    FrameId id = kInvalidFrameId;   // 未分配槽位时为 kInvalidFrameId
+    FrameId id = kInvalidFrameId;   // 由输入打包段赋值后经 bindFrame 写入；空槽为 kInvalidFrameId
     Vector3d P, V;
     Matrix3d R;
     Vector3d Ba, Bg;
@@ -213,10 +261,9 @@ struct ParameterBlocks {
 
 - `FrameState frames_[WINDOW_SIZE + 1]` — 按 **slot** 存储；
 - `FrameImuData imu_data_[WINDOW_SIZE + 1]` — 与 `frames_[slot]` 一一对应，共享同一 `FrameId`；
-- `std::unordered_map<FrameId, int> id_to_slot_` — 仅包含**当前窗口内**活跃帧；
-- `FrameId next_frame_id_` — 下一帧待分配 ID（`clear()` 时归零）。
+- `std::unordered_map<FrameId, int> id_to_slot_` — 仅包含**当前窗口内**活跃帧（**不**维护 `next_frame_id_`，ID 计数器在输入打包层）。
 
-`slideWindow` 时 `FrameState` 与 `FrameImuData` **成对** swap/拷贝，`id_to_slot_` 在搬移后重建或增量更新。Ceres `para_*` 仍按 slot 索引，由 `syncToParameters()` / `syncFromParameters()` 与 `frames_[slot]` 同步。
+`slideWindow` 时 `FrameState` 与 `FrameImuData` **成对** swap/拷贝，`id_to_slot_` 在搬移后重建或增量更新；`FrameId` 随数据迁移，数值不变。Ceres `para_*` 仍按 slot 索引，由 `syncToParameters()` / `syncFromParameters()` 与 `frames_[slot]` 同步。
 
 ---
 
@@ -248,11 +295,12 @@ public:
 
 ### 4.2 滑动窗口帧状态访问
 
-#### 4.2.1 FrameId 分配与查询
+#### 4.2.1 FrameId 登记与查询
 
 ```cpp
-// 新图像帧进入窗口时调用，写入 frames_[slot].id 并注册反查表
-FrameId allocateFrameId();
+// 将输入打包段已赋值的 FrameId 绑定到指定槽位（processImage 入口调用）
+// 要求 id != kInvalidFrameId，且当前窗口内尚未存在该 id
+void bindFrame(int slot, FrameId id, const SimpleHeader& header);
 
 // 当前窗口内是否仍存在该帧（边缘化后返回 false）
 bool contains(FrameId id) const;
@@ -273,10 +321,10 @@ std::optional<FrameId> frameIdAtStamp(double stamp_sec) const;
 
 | 接口 | 说明 |
 |------|------|
-| `allocateFrameId()` | `next_frame_id_++`；仅在 `processImage` 为新槽位写入 header 时调用一次 |
+| `bindFrame(slot, id, header)` | 写入 `frames_[slot].id`、`header`，更新 `id_to_slot_`；**不**生成新 ID |
 | `contains(id)` | 查 `id_to_slot_` |
 | `slotOf(id)` | 得到 Ceres/因子用的 slot；边缘化出窗的 ID 无映射 |
-| `frameIdAtStamp()` | 线性扫描 `frames_[slot].header.stamp`（窗口 ≤ 11，开销可忽略） |
+| `frameIdAtStamp()` | 线性扫描 `frames_[slot].header.stamp`（窗口 ≤ 11；有 `id` 时优先用 `contains`） |
 
 #### 4.2.2 按 FrameId 访问（推荐主路径）
 
@@ -314,11 +362,16 @@ double* speedBiasParameter(FrameId id);
 **使用示例**（伪代码）：
 
 ```cpp
-FrameId id = state.allocateFrameId();
-state.frameState(id).header = header;
-state.setPose(id, P, R, V);
-state.preIntegration(id) = std::make_shared<Integrator>(...);
-// 后续任意模块仅凭 id 访问，与 slideWindow 后的 slot 变化无关
+// --- 输入打包段（simulation_standalone / 适配层）---
+FrameId id = ++input_frame_seq;  // 或 rosbag 消息序号
+ImageFrameInput input{id, header, image};
+
+// --- Estimator::processImage ---
+const int slot = state.slotCount();  // 当前写入槽位
+state.bindFrame(slot, input.id, input.header);
+state.preIntegrationAtSlot(slot) = std::make_shared<Integrator>(...);
+// 优化、slideWindow 之后，其他模块仅凭 input.id 访问
+state.frameState(input.id).P;
 ```
 
 #### 4.2.3 按槽位访问（Ceres / 迁移过渡）
@@ -332,7 +385,7 @@ int  slotCount() const;   // 等价原 frame_count
 void setSlotCount(int n);
 
 void setFrameStateAtSlot(int slot, const Vector3d& P, const Matrix3d& R, const Vector3d& V);
-void initializeFrameAtSlot(int slot, FrameId id,
+void initializeFrameAtSlot(int slot, FrameId id, const SimpleHeader& header,
                            const Vector3d& P, const Matrix3d& R, const Vector3d& V,
                            const Vector3d& Ba, const Vector3d& Bg);
 ```
@@ -341,7 +394,7 @@ void initializeFrameAtSlot(int slot, FrameId id,
 |------|-------------|------|
 | `frameAtSlot(slot)` | `Ps[slot]` 等 | `optimization()`、`IMUFactor(i,j)` 等仍用 slot |
 | `slotCount()` | `frame_count` | 初始化阶段递增；满窗后恒为 `WINDOW_SIZE` |
-| `initializeFrameAtSlot` | `initializeWithGroundTruth()` | 同时写入 `FrameId` 与 P/R/V |
+| `initializeFrameAtSlot` | `initializeWithGroundTruth()` | GT 路径也须由调用方传入打包段 `FrameId` |
 
 > **迁移建议**：`FeatureManager` 的 `start_frame` 最终应改为存 `FrameId` 而非槽位/逻辑帧号；过渡期可提供 `FrameId feature_start_id` 与 `slot` 互转辅助函数。
 
@@ -490,14 +543,10 @@ Vector3d lastPosition0() const;  // last_P0
 MarginalizationInfo*& lastMarginalizationInfo();
 std::vector<double*>& lastMarginalizationParameterBlocks();
 
-// 边缘化正规方程工作区
-MatrixXd& marginalizationA(int block_idx);  // Ap[0/1]
-VectorXd& marginalizationB(int block_idx);  // bp[0/1]
-MatrixXd& backupA();
-VectorXd& backupB();
-
 void clearMarginalizationPrior();  // 释放 last_marginalization_info
 ```
+
+> 原 `Ap[]` / `bp[]` / `backup_A` / `backup_b` 为死代码，见 §2.10，实现时勿恢复。
 
 | 接口 | 对应现有逻辑 | 说明 |
 |------|-------------|------|
@@ -541,7 +590,8 @@ const Matrix3d* rotationsData() const;   // Rs
 | 调用方 | 使用的 StateManager 接口 | 说明 |
 |--------|-------------------------|------|
 | `Estimator::processIMU` | `propagateImu(..., g)`, `preIntegration`, `pushImuSample` | Estimator 持有 `g`/`first_imu`/`acc_0`/`gyr_0` |
-| `Estimator::processImage` | `setFrameHeader`, `slotCount`, `slideWindow(mode)` | `marginalization_flag` 在 Estimator 内决策 |
+| 输入打包段 | `++input_frame_seq` → `ImageFrameInput.id` / `header.seq` | **FrameId 唯一赋值点** |
+| `Estimator::processImage` | `bindFrame(slot, id, header)`, `slideWindow(mode)` | 从 `input` 取 id，不内部递增 |
 | `Estimator::optimization` | `syncToParameters`, `parameterBlocks`, `syncFromParameters` | Ceres 求解前后同步 |
 | `Estimator::failureDetection` | `latestFrameId()`, `frameState(id)`, `lastRotation/Position` | 状态异常检测 |
 | `FeatureManager::triangulate` | `positionsData` 或 `frame(i).P`, `extrinsic(i)` | 三角化 |
@@ -555,11 +605,11 @@ const Matrix3d* rotationsData() const;   // Rs
 
 ### Phase 1：封装核心窗口状态 + FrameId（低风险）
 
-1. 创建 `StateManager`，迁移 `Ps/Vs/Rs/Bas/Bgs/Headers/frame_count`。
-2. 引入 `FrameId`、`FrameState.id`、`id_to_slot_`、`allocateFrameId()`。
-3. 实现 `frameState(id)` / `frameAtSlot(slot)` 双路径访问、`clear()`、`initializeFrameAtSlot()`。
-4. `processImage` 每来一帧：`allocateFrameId()` → 写入对应 slot 的 `FrameState`。
-5. `Estimator` 成员改为 `StateManager state_`；编译通过，行为不变（`FeatureManager` 仍可用 slot/原 `frame_count`，后续 Phase 再改）。
+1. 在 `simple_types.h` 增加 `FrameId`，扩展 `SimpleHeader::seq` 或新增 `ImageFrameInput`。
+2. **输入打包段**（如 `simulation_standalone.cpp`）在组帧时赋值 `FrameId`；`processImage` 传入。
+3. 创建 `StateManager`，迁移 `Ps/Vs/Rs/Bas/Bgs/Headers/frame_count`；实现 `bindFrame(slot, id, header)`（**无** `allocateFrameId`）。
+4. 实现 `frameState(id)` / `frameAtSlot(slot)`、`clear()`、`initializeFrameAtSlot(..., id, ...)`。
+5. `Estimator` 成员改为 `StateManager state_`；编译通过（`FeatureManager` 仍可用 slot，后续 Phase 再改）。
 
 ### Phase 2：Ceres 桥接（中风险）
 
@@ -580,11 +630,16 @@ const Matrix3d* rotationsData() const;   // Rs
 2. 实现对应接口。
 3. 移除 `Estimator` 中已迁移的成员。
 
+### Phase 0（可选，建议尽早）：删除无行为变更的死代码
+
+1. 从 `estimator.h` 删除 `Ap[]`、`bp[]`、`backup_A`、`backup_b`（§2.10）。
+2. （可选）同 PR 删除 §2.9 回环遗留代码。
+
 ### Phase 5：清理过渡接口与遗留代码
 
 1. 消除 `positionsData()` 等裸数组视图。
 2. `FeatureManager::triangulate` 改为接受 `StateManager&` 或 `array_view<FrameState>`。
-3. 删除 §2.9 所列回环/重定位遗留代码（`setReloFrame`、`relocalization_info` 分支、`para_Retrive_Pose` 等）。
+3. 若 Phase 0 未做：删除 §2.9 回环/重定位遗留代码（`setReloFrame`、`relocalization_info` 分支、`para_Retrive_Pose` 等）。
 
 ---
 
@@ -593,14 +648,13 @@ const Matrix3d* rotationsData() const;   // Rs
 `StateManager` 实现时必须维护以下不变量：
 
 1. **槽位范围**：`0 <= slot_count <= WINDOW_SIZE`；未满窗时仅 `[0, slot_count]` 有效。
-2. **FrameId 唯一性**：窗口内任意两帧 `frames_[i].id != frames_[j].id`（`i != j`）；`id_to_slot_` 与 `frames_[].id` 一致。
-3. **FrameId 单调性**：新分配 ID 严格大于窗口内已有 ID（`allocateFrameId()` 使用 `next_frame_id_++`）。
-4. **边缘化失效**：最老帧滑出窗口后，从其 `id_to_slot_` 删除；`contains(old_id) == false`，但历史日志仍可记录该 ID。
-5. **旋转正交性**：`syncFromParameters` 后所有 `R` 应为有效旋转矩阵（`det(R) ≈ 1`）。
-6. **参数块同步**：`para_Pose[slot]` 与 `frameAtSlot(slot)` 一致；`poseParameter(frame_id)` 与 `frameState(id)` 一致。
-7. **预积分一致性**：`preIntegration(id)` 的 bias 线性化点等于 `frameState(id).Ba/Bg`；窗口搬移后重建末帧预积分器。
-8. **边缘化 prior 地址稳定性**：`slideWindow` 后 `last_marginalization_parameter_blocks` 按 `addr_shift` 更新（参数块所有权在 `StateManager`）。
-9. **线程安全**：当前为单线程，无需加锁。
+2. **FrameId 唯一性**：输入打包段保证全局 `id` 单调且不重复；窗口内 `frames_[i].id != frames_[j].id`（`i != j`）；`id_to_slot_` 与 `frames_[].id` 一致。
+3. **边缘化失效**：最老帧滑出窗口后，从其 `id_to_slot_` 删除；`contains(old_id) == false`，但历史日志仍可记录该 ID。
+4. **旋转正交性**：`syncFromParameters` 后所有 `R` 应为有效旋转矩阵（`det(R) ≈ 1`）。
+5. **参数块同步**：`para_Pose[slot]` 与 `frameAtSlot(slot)` 一致；`poseParameter(frame_id)` 与 `frameState(id)` 一致。
+6. **预积分一致性**：`preIntegration(id)` 的 bias 线性化点等于 `frameState(id).Ba/Bg`；窗口搬移后重建末帧预积分器。
+7. **边缘化 prior 地址稳定性**：`slideWindow` 后 `last_marginalization_parameter_blocks` 按 `addr_shift` 更新（参数块所有权在 `StateManager`）。
+8. **线程安全**：当前为单线程，无需加锁。
 
 ---
 
@@ -625,7 +679,7 @@ CMakeLists.txt 中为 `vins_estimator` target 添加 `state_manager.cpp`。
 | `clear()` 后所有状态归零 | 单元测试：检查 frame(0).P.norm() == 0 等 |
 | `syncToParameters` ↔ `syncFromParameters` 往返 | 设置已知 P/R/V，sync 双向后误差 < 1e-10 |
 | `slideWindowOld` 搬移正确性 | 搬移后 `frameAtSlot(i).id ==` 原 `frameAtSlot(i+1).id`（FrameId 随数据迁移） |
-| FrameId 反查 | `allocateFrameId` 后 `slotOf(id)` 与 `contains(id)` 一致 |
+| FrameId 反查 | `bindFrame` 后 `slotOf(id)` 与 `contains(id)` 一致 |
 | `slideWindowNew` 合并 IMU 缓冲 | 检查合并后预积分 dt 总和不变 |
 | yaw 对齐 | 优化后 frame(0) 的 yaw 与优化前一致 |
 | 失败重启 | Estimator 在 `failure_occur` 时向 `syncFromParameters({last_P0, last_R0})` 传入对齐原点 |
@@ -638,8 +692,9 @@ CMakeLists.txt 中为 `vins_estimator` target 添加 `state_manager.cpp`。
 2. **`FeatureManager` 接口改造**：`triangulate(Ps, tic, ric)` 是否改为 `triangulate(StateManager&)`？建议 Phase 5 再改。
 3. **`SolverFlag` / `MarginalizationFlag` 枚举位置**：建议移入 `state_manager.h`，或放入独立的 `solver_types.h`。
 4. **是否引入 `ImuBufferManager` 子组件**：若 `StateManager` 过大，可将 §2.4 预积分缓冲拆为独立类，由 `StateManager` 组合。
-5. **回环遗留代码清理时机**：是否在 Phase 1 之前单独 PR 删除，避免 StateManager 迁移时携带死代码？建议尽早清理。
+5. **遗留代码清理时机**：`Ap/bp/backup_*`（§2.10）与回环代码（§2.9）均建议在 Phase 1 前删除，避免 StateManager 迁移时携带死成员。
 6. **`FeatureManager::start_frame` 类型**：是否改为 `FrameId`？若改，需同步 `removeFront`/`removeBack` 的 ID 递减策略（或改为按 `FrameId` 集合删除）。
+7. **输入层 ID 策略**：仿真用本地递增 `seq`；真机是否用相机硬件帧号 / rosbag `header.seq`？需在打包段统一，StateManager 只消费。
 
 ---
 
@@ -649,7 +704,7 @@ CMakeLists.txt 中为 `vins_estimator` target 添加 `state_manager.cpp`。
 |-----------------|-------------------|
 | `Ps[i]`, `Vs[i]`, `Rs[i]`, `Bas[i]`, `Bgs[i]` | `frameState(id).P/V/R/Ba/Bg` 或 `frameAtSlot(i)` |
 | `Headers[i]` | `frameState(id).header` |
-| （无，新增） | `FrameId` / `allocateFrameId()` / `slotOf(id)` |
+| （无，新增） | 输入打包段赋 `FrameId` → `bindFrame()` / `slotOf(id)` |
 | `frame_count` | `slotCount()` / `setSlotCount()` |
 | `ric[i]`, `tic[i]` | `extrinsic(i).ric/tic` |
 | `td` | `timeDelay()` |
@@ -665,4 +720,5 @@ CMakeLists.txt 中为 `vins_estimator` target 添加 `state_manager.cpp`。
 | `back_R0`, `back_P0` | `backRotation()`, `backPosition()` |
 | `last_R/P/R0/P0` | `lastRotation/Position/Rotation0/Position0()` |
 | `last_marginalization_info` | `lastMarginalizationInfo()` |
-| `relocalization_info` 等（遗留） | **不纳入** StateManager，建议删除 |
+| `Ap[]`, `bp[]`, `backup_A`, `backup_b` | **删除**（§2.10，勿纳入 StateManager） |
+| `relocalization_info` 等（遗留） | **不纳入** StateManager，建议删除（§2.9） |

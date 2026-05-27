@@ -1,7 +1,9 @@
-# VINS-Mono
-## A Robust and Versatile Monocular Visual-Inertial State Estimator
+# VINS-Multi
+## Multi-Camera Visual-Inertial Odometry (standalone-first)
 
-**11 Jan 2019**: An extension of **VINS**, which supports stereo cameras / stereo cameras + IMU / mono camera + IMU, is published at [VINS-Fusion](https://github.com/HKUST-Aerial-Robotics/VINS-Fusion)
+**VINS-Multi** extends the [VINS-Mono](https://github.com/HKUST-Aerial-Robotics/VINS-Mono) estimator core toward **configurable multi-camera** VIO: Kalibr `cam_chain` extrinsics, `StateManager`, and standalone simulation (`num_of_cam` = 1 / 2 / 4). Single-camera runs remain supported as the default regression baseline.
+
+**11 Jan 2019** (upstream): An extension of **VINS**, which supports stereo cameras / stereo cameras + IMU / mono camera + IMU, is published at [VINS-Fusion](https://github.com/HKUST-Aerial-Robotics/VINS-Fusion)
 
 **29 Dec 2017**: New features: Add map merge, pose graph reuse, online temporal calibration function, and support rolling shutter camera. Map reuse videos: 
 
@@ -10,7 +12,7 @@ alt="cla" width="240" height="180" border="10" /></a>
 <a href="https://www.youtube.com/embed/eINyJHB34uU" target="_blank"><img src="http://img.youtube.com/vi/eINyJHB34uU/0.jpg" 
 alt="icra" width="240" height="180" border="10" /></a>
 
-VINS-Mono is a real-time SLAM framework for **Monocular Visual-Inertial Systems**. It uses an optimization-based sliding window formulation for providing high-accuracy visual-inertial odometry. It features efficient IMU pre-integration with bias correction, automatic estimator initialization, online extrinsic calibration, failure detection and recovery, loop detection, and global pose graph optimization, map merge, pose graph reuse, online temporal calibration, rolling shutter support. VINS-Mono is primarily designed for state estimation and feedback control of autonomous drones, but it is also capable of providing accurate localization for AR applications. This code runs on **Linux**, and is fully integrated with **ROS**. For **iOS** mobile implementation, please go to [VINS-Mobile](https://github.com/HKUST-Aerial-Robotics/VINS-Mobile).
+The upstream **VINS-Mono** framework is a real-time SLAM system for monocular visual-inertial odometry (sliding window, IMU pre-integration, online extrinsic calibration, etc.). **This repository** keeps that optimization backbone and adds multi-camera configuration, `StateManager` refactoring, and a **non-ROS** simulation path. Legacy ROS build instructions below still apply if you use the original catkin layout. For **iOS**, see [VINS-Mobile](https://github.com/HKUST-Aerial-Robotics/VINS-Mobile).
 
 **Authors:** [Tong Qin](http://www.qintonguav.com), [Peiliang Li](https://github.com/PeiliangLi), [Zhenfei Yang](https://github.com/dvorak0), and [Shaojie Shen](http://www.ece.ust.hk/ece.php/profile/facultydetail/eeshaojie) from the [HKUST Aerial Robotics Group](http://uav.ust.hk/)
 
@@ -38,7 +40,7 @@ alt="Mobile platform" width="240" height="180" border="10" /></a>
 
 * **VINS-Mono: A Robust and Versatile Monocular Visual-Inertial State Estimator**, Tong Qin, Peiliang Li, Zhenfei Yang, Shaojie Shen, IEEE Transactions on Robotics[pdf](https://ieeexplore.ieee.org/document/8421746/?arnumber=8421746&source=authoralert) 
 
-*If you use VINS-Mono for your academic research, please cite at least one of our related papers.*[bib](https://github.com/HKUST-Aerial-Robotics/VINS-Mono/blob/master/support_files/paper_bib.txt)
+*If you build on this codebase for academic work, please cite the original VINS-Mono papers (and your own extensions as appropriate).*[bib](https://github.com/HKUST-Aerial-Robotics/VINS-Mono/blob/master/support_files/paper_bib.txt)
 
 ## 1. Prerequisites
 1.1 **Ubuntu** and **ROS**
@@ -53,11 +55,11 @@ additional ROS pacakge
 1.2. **Ceres Solver**
 Follow [Ceres Installation](http://ceres-solver.org/installation.html), use **version 1.14.0** and remember to **sudo make install**. (There are compilation issues in Ceres versions 2.0.0 and above.)
 
-## 2. Build VINS-Mono on ROS
+## 2. Build on ROS (optional, upstream layout)
 Clone the repository and catkin_make:
 ```
     cd ~/catkin_ws/src
-    git clone https://github.com/HKUST-Aerial-Robotics/VINS-Mono.git
+    git clone <your-remote> VINS-Multi
     cd ../
     catkin_make
     source ~/catkin_ws/devel/setup.bash
@@ -143,11 +145,11 @@ For rolling shutter camera (carefully calibrated, reprojection error under 0.5 p
 
 To further facilitate the building process, we add docker in our code. Docker environment is like a sandbox, thus makes our code environment-independent. To run with docker, first make sure [ros](http://wiki.ros.org/ROS/Installation) and [docker](https://docs.docker.com/install/linux/docker-ce/ubuntu/) are installed on your machine. Then add your account to `docker` group by `sudo usermod -aG docker $YOUR_USER_NAME`. **Relaunch the terminal or logout and re-login if you get `Permission denied` error**, type:
 ```
-cd ~/catkin_ws/src/VINS-Mono/docker
+cd ~/catkin_ws/src/VINS-Multi/docker
 make build
 ./run.sh LAUNCH_FILE_NAME   # ./run.sh euroc.launch
 ```
-Note that the docker building process may take a while depends on your network and machine. After VINS-Mono successfully started, open another terminal and play your bag file, then you should be able to see the result. If you need modify the code, simply run `./run.sh LAUNCH_FILE_NAME` after your changes.
+Note that the docker building process may take a while depends on your network and machine. After the estimator successfully started, open another terminal and play your bag file, then you should be able to see the result. If you need modify the code, simply run `./run.sh LAUNCH_FILE_NAME` after your changes.
 
 ### 6.1 Run simulation without ROS (native standalone)
 
@@ -203,18 +205,16 @@ dpkg -s libeigen3-dev | grep Version
 Build and run:
 
 ```bash
-cd ~/catkin_ws/src/VINS-Mono
-chmod +x standalone/run_standalone.sh
-./standalone/run_standalone.sh
-```
-
-Or run manually:
-
-```bash
-cd ~/catkin_ws/src/VINS-Mono
+cd <repo-root>   # e.g. ~/workspace/VINS-Multi
 cmake -S standalone -B build_standalone
 cmake --build build_standalone -j$(nproc)
-./build_standalone/vins_simulation_standalone ./config/simulation/simulation_config.yaml
+./build_standalone/vins_multi_simulation ./config/simulation/simulation_config.yaml
+```
+
+Or run regression tests:
+
+```bash
+cd build_standalone && ctest --output-on-failure
 ```
 
 Build standalone in one command:

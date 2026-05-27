@@ -136,7 +136,7 @@ struct ImageFrameInput {
 |------|------|--------------------------|
 | `solver_flag` | `SolverFlag` | 控制 INITIAL / NON_LINEAR 阶段分支，属于编排逻辑 |
 | `marginalization_flag` | `MarginalizationFlag` | 由 `processImage` 根据视差决策，驱动 `slideWindow` 分支 |
-| `g` | `Vector3d` | 启动时从 `vinsParameters().gravity()` 拷贝；VINS-Mono 中不估计重力，仅需在 `processIMU` / 预积分构造时**只读传入** StateManager |
+| `g` | `Vector3d` | 启动时从 `vinsParameters().gravity()` 拷贝；VINS-Multi 中不估计重力，仅需在 `processIMU` / 预积分构造时**只读传入** StateManager |
 | `first_imu` | `bool` | `processIMU` 首包检测，纯控制流 |
 | `failure_occur` | `bool` | 连接 `failureDetection` 与 `double2vector` 重启逻辑，非窗口状态 |
 | `initial_timestamp` | `double` | 系统级时间原点，与单帧 `header.stamp` 不同层级 |
@@ -269,7 +269,7 @@ struct ParameterBlocks {
 
 ## 四、StateManager 接口设计
 
-以下接口按功能分组。命名采用 snake_case，与现有 VINS-Mono 代码风格一致。
+以下接口按功能分组。命名采用 snake_case，与现有 VINS-Multi 代码风格一致。
 
 ### 4.1 生命周期
 
@@ -784,7 +784,7 @@ auto &cfg = vinsParameters();        // 运行期只读/可写访问
 
 ## 十一、实现状态检查清单
 
-> 对照 §六 迁移阶段与 §4 接口契约。最后验证：`cmake -S standalone -B build_standalone && cmake --build build_standalone`，`./vins_simulation_standalone` 指标与 README 一致（raw mae≈0.0753451）。
+> 对照 §六 迁移阶段与 §4 接口契约。最后验证：`cmake -S standalone -B build_standalone && cmake --build build_standalone`，`./vins_multi_simulation` 指标与 README 一致（raw mae≈0.0753451）。
 
 | 项 | 状态 | 说明 |
 |----|------|------|
@@ -815,7 +815,7 @@ auto &cfg = vinsParameters();        // 运行期只读/可写访问
 ```bash
 cmake -S standalone -B build_standalone && cmake --build build_standalone
 cd build_standalone && ctest --output-on-failure
-# 或单独：./build_standalone/vins_simulation_standalone
+# 或单独：./build_standalone/vins_multi_simulation
 #         ./standalone/check_simulation_metrics.sh
 ```
 

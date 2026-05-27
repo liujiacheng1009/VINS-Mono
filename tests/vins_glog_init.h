@@ -10,7 +10,7 @@ inline void ensureInitialized()
     if (initialized)
         return;
     logging::ValueLogger::Options opts;
-    opts.program_name = "vins_mono_tests";
+    opts.program_name = "vins_multi_tests";
     opts.also_log_to_stderr = true;
     logging::ValueLogger::Init(opts);
     initialized = true;

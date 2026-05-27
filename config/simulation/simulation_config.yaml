@@ -3,7 +3,7 @@
 #common parameters
 imu_topic: "/data_generator/imu"
 image_topic: "/data_generator/image"
-output_path: "/tmp/vins_mono_output/"
+output_path: "/tmp/vins_multi_output/"
 # image size from cam_chain when loaded; defaults below are fallback only
 image_height: 480
 image_width: 752

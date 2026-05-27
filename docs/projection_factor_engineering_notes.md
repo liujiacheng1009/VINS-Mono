@@ -1,6 +1,6 @@
 # 视觉投影因子模块工程规范梳理
 
-本文档汇总 VINS-Mono 中视觉投影残差相关模块的工程改进点，覆盖：
+本文档汇总 VINS-Multi 中视觉投影残差相关模块的工程改进点，覆盖：
 
 - `vins_estimator/src/factor/projection_factor.h`
 - `vins_estimator/src/factor/projection_factor.cpp`
@@ -67,7 +67,7 @@ static Eigen::Matrix2d sqrt_info;
 static double sum_t;
 ```
 
-- `sqrt_info` 是类级全局共享。这在 VINS-Mono 单目场景下没问题，但语义上不利于多相机/多分辨率扩展，也让单元测试需要先 set 静态状态再构造对象。可以考虑改为成员变量（每个 factor 在构造时由 caller 注入），或者用 setter 显式表达初始化时机。
+- `sqrt_info` 是类级全局共享。这在单目场景下没问题，但语义上不利于多相机/多分辨率扩展，也让单元测试需要先 set 静态状态再构造对象。可以考虑改为成员变量（每个 factor 在构造时由 caller 注入），或者用 setter 显式表达初始化时机。
 - `sum_t` 是累积 profiling 计数：
   - 全局可写、非线程安全；
   - 永不归零，长时间运行越来越大；

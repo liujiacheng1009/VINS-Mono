@@ -5,7 +5,7 @@ set -euo pipefail
 BIN="${1:-}"
 if [[ -z "$BIN" ]]; then
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  BIN="${SCRIPT_DIR}/../build_standalone/vins_simulation_standalone"
+  BIN="${SCRIPT_DIR}/../build_standalone/vins_multi_simulation"
 fi
 
 if [[ ! -x "$BIN" ]]; then

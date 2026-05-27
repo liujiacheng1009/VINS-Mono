@@ -1,4 +1,4 @@
-# Kalibr cam_chain for VINS-Mono simulation (stereo reference).
+# Kalibr cam_chain for VINS-Multi simulation (stereo reference).
 # Intrinsics / resolution match config/simulation/simulation_config.yaml:
 #   image_width=752, image_height=480, focal_length=460 (fu=fv).
 # Stereo baseline: 6 cm along +X in cam0 (cam1 to the right of cam0).

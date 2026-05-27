@@ -1,6 +1,6 @@
 # 边缘化模块工程规范梳理
 
-本文档汇总 VINS-Mono 中边缘化相关模块的工程改进点，覆盖：
+本文档汇总 VINS-Multi 中边缘化相关模块的工程改进点，覆盖：
 
 - `vins_estimator/src/factor/marginalization_factor.h`
 - `vins_estimator/src/factor/marginalization_factor.cpp`
@@ -185,7 +185,7 @@ int localSize(int size) const
 }
 ```
 
-隐含假设所有 7 维参数块都是 pose，且局部维度都是 6。短期内符合 VINS-Mono 的 pose 参数化，但工程上应避免只靠 global size 推断 local size。
+隐含假设所有 7 维参数块都是 pose，且局部维度都是 6。短期内符合 VINS-Multi 的 pose 参数化，但工程上应避免只靠 global size 推断 local size。
 
 建议：
 

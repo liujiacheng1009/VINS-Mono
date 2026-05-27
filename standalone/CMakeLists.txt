@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(vins_mono_standalone)
+project(vins_multi_standalone)
 
 enable_testing()
 
@@ -13,7 +13,7 @@ find_package(Ceres REQUIRED)
 
 add_subdirectory(../third_party/log_value ${CMAKE_BINARY_DIR}/third_party/log_value)
 
-add_executable(vins_simulation_standalone
+add_executable(vins_multi_simulation
     simulation_standalone.cpp
     ../data_generator/src/data_generator.cpp
     ../vins_estimator/src/parameters.cpp
@@ -28,7 +28,7 @@ add_executable(vins_simulation_standalone
     ../vins_estimator/src/utility/utility.cpp
 )
 
-target_include_directories(vins_simulation_standalone PRIVATE
+target_include_directories(vins_multi_simulation PRIVATE
     ../vins_estimator/src
     ../data_generator/src
     ${EIGEN3_INCLUDE_DIRS}
@@ -36,7 +36,7 @@ target_include_directories(vins_simulation_standalone PRIVATE
     ${OpenCV_INCLUDE_DIRS}
 )
 
-target_link_libraries(vins_simulation_standalone
+target_link_libraries(vins_multi_simulation
     ${OpenCV_LIBS}
     ${CERES_LIBRARIES}
     log_value::log_value
@@ -71,6 +71,6 @@ add_test(NAME state_manager_smoke COMMAND state_manager_smoke_test)
 add_test(
     NAME simulation_metrics_regression
     COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/check_simulation_metrics.sh
-            $<TARGET_FILE:vins_simulation_standalone>
+            $<TARGET_FILE:vins_multi_simulation>
 )
 set_tests_properties(simulation_metrics_regression PROPERTIES TIMEOUT 120)

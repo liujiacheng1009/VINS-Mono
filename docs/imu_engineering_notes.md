@@ -1,6 +1,6 @@
 # IMU 模块工程规范梳理
 
-本文档汇总 VINS-Mono 中 IMU 相关模块的工程改进点，覆盖：
+本文档汇总 VINS-Multi 中 IMU 相关模块的工程改进点，覆盖：
 
 - `vins_estimator/src/factor/imu_factor.h`（Ceres IMU 因子）
 - `vins_estimator/src/factor/integration_base.h`（IMU 预积分）

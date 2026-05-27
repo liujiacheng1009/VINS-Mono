@@ -18,7 +18,7 @@ int main(int argc, char **argv)
     readParameters(config_path);
 
     logging::ValueLogger::Options log_opts;
-    log_opts.program_name = "vins_simulation_standalone";
+    log_opts.program_name = "vins_multi_simulation";
     log_opts.log_path = "log";
     log_opts.also_log_to_stderr = true;
     logging::ValueLogger::Init(log_opts);

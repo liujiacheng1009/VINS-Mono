@@ -337,9 +337,12 @@ sequenceDiagram
 | `vins_estimator/src/feature_manager.{h,cpp}` | **扩展** `camera_id`、多观测入窗、三角化/边缘化外参 |
 | `vins_estimator/src/estimator.cpp` | **修改** 优化与 `slideWindowOld` 外参索引 |
 | `standalone/simulation_standalone.cpp` | **小改** 注入 generator 配置、`prev_uv` 策略 |
+| `data_generator/vis/sim_generator_dump.cpp` | **已实现** 导出仿真 JSON，供离线可视化（不跑 VIO） |
+| `data_generator/vis/python/visualize.py` | **已实现** 3D 轨迹/路标/观测射线 + IMU 曲线 |
+| `data_generator/vis/bindings.cpp` | **可选** 本机 pybind11 模块 `vins_sim_data` |
 | `tests/projection_factor_test.cpp` | **扩展** 多目外参 |
 | `docs/state_manager_refactoring.md` | **补充** 交叉引用（可选） |
-| `README.md` | **补充** 多目仿真运行说明（实现后） |
+| `README.md` | **已补充** §6.2 单相机仿真可视化；多目 VIO 运行说明待实现后补充 |
 
 **预计不需改**：`StateManager` 窗口搬移逻辑、`IMUFactor`、`ImageFrameInput` 顶层结构（仅文档化约定）。  
 **需改**：`StateManager::extrinsic(int)` 的索引语义（slot → `cam_id` + map）。
@@ -367,4 +370,97 @@ sequenceDiagram
 
 - 窗口与参数布局：见 `docs/state_manager_refactoring.md`（`num_of_cam`、`extrinsic(cam_id)`；多目外参以 **`cam_id`→map** 为准，非 `ric[i]` 槽位数组）。  
 - 投影因子接口：见 `docs/projection_factor_engineering_notes.md`。  
-- 本文档为实现多目时的**主设计入口**；实现完成后在 §十一「实现状态」增加多目验收记录。
+- 仿真数据离线可视化（单相机，不跑 VIO）：见 **§十二**、`data_generator/vis/README.md`。  
+- 本文档为实现多目时的**主设计入口**；多目 VIO 验收记录待实现后补充。
+
+---
+
+## 十二、仿真数据可视化（已实现，单相机）
+
+在调试 `DataGenerator` 观测与 IMU 时，可先**不运行** `vins_estimator`，仅导出真值并做 3D / 时序图。当前对应 `NUMBER_OF_CAMERA=1`；多目扩展后 dump 格式已含 `camera_id` / `packed_id` 字段，可视化脚本可随多目一并增强。
+
+### 12.1 方式 A：JSON 导出 + Python（推荐）
+
+**依赖**：与 standalone 相同（CMake、Eigen3）；Python 侧 `matplotlib`、`numpy`（见 `data_generator/vis/python/requirements.txt`）。
+
+```bash
+cd <仓库根目录>
+cmake -S standalone -B build_standalone
+cmake --build build_standalone --target sim_generator_dump -j
+
+./build_standalone/sim_generator_dump data_generator/vis/output/sim_dump.json
+pip install -r data_generator/vis/python/requirements.txt
+python3 data_generator/vis/python/visualize.py data_generator/vis/output/sim_dump.json
+```
+
+**无图形界面**（SSH 等）：
+
+```bash
+MPLBACKEND=Agg python3 data_generator/vis/python/visualize.py data_generator/vis/output/sim_dump.json --save sim_vis.png
+```
+
+默认**单窗口上下布局**（上 3D、下 IMU），`--save` 输出一张图；界面文字为英文。
+
+| 参数 | 说明 |
+|------|------|
+| `sim_generator_dump <output.json> [duration_scale]` | 写出 JSON；`duration_scale` 默认 `3.0`，与 `simulation_standalone` 仿真时长一致 |
+| `visualize.py --frame-stride N` | 3D 图每隔 N 帧画一次相机位姿与射线，减轻卡顿 |
+| `visualize.py --ray-length L` | 观测射线在世界系中的显示长度（米） |
+| `visualize.py --max-rays M` | 每帧最多绘制 M 条射线 |
+| `visualize.py --no-3d` / `--no-imu` | 只画 IMU 或只画 3D |
+
+**JSON 内容概要**：
+
+- `landmarks`：仿真路标世界坐标  
+- `imu`：`t`、位置、机体系速度、四元数、`acc`/`gyr`  
+- `image_frames[]`：每帧时间、IMU 位姿、`observations[]`（`feature_id`、`camera_id`、`ray_cam` 归一化射线）  
+- `extrinsics[]`：各相机 `ric`/`tic`（IMU→相机）
+
+### 12.2 方式 B：pybind11（可选）
+
+绑定代码位于 `data_generator/vis/bindings.cpp`，使用**本机已安装**的 pybind11（`sudo apt install pybind11-dev` 或 `pip3 install pybind11`），不再 FetchContent 下载。
+
+```bash
+cmake -S standalone -B build_standalone -DBUILD_SIM_PYTHON=ON
+cmake --build build_standalone --target vins_sim_data -j
+
+export PYTHONPATH=$PWD/build_standalone/data_generator_vis:$PYTHONPATH
+python3 -c "import vins_sim_data as s; g=s.DataGenerator(); print(g.get_time())"
+
+pip install -r data_generator/vis/python/requirements.txt
+python3 data_generator/vis/python/live_visualize.py --realtime
+```
+
+**说明**：单行 `python3 -c "..."` 仅能验证模块是否加载，**不能**在线绘图。`live_visualize.py` 默认**单窗口上下拼接**（上 3D 轨迹/观测，下 IMU 加速度与角速度滚动曲线）；`--no-imu` 仅保留 3D。已废弃 `--imu`（勿使用，会与 `--imu-samples` 前缀冲突）。常用参数：
+
+| 参数 | 说明 |
+|------|------|
+| `--realtime` | 按仿真图像帧率（约 10 Hz）刷新 |
+| `--interval-ms N` | 手动指定动画间隔（默认 80 ms，可快进） |
+| `--no-imu` | 仅 3D 视图 |
+| `--imu-samples N` | 在线 IMU 曲线滚动窗口长度（默认 500） |
+| `--duration-scale` | 与 dump / `simulation_standalone` 一致，默认 `3.0` |
+| `--max-rays` / `--ray-length` | 同离线 `visualize.py` |
+
+离线批量回放、保存图片仍建议 §12.1 的 `sim_generator_dump` + `visualize.py`。
+
+### 12.3 3D / IMU 图含义
+
+| 图层 | 含义 |
+|------|------|
+| 灰色散点 | 路标 `landmarks` |
+| 蓝色曲线 | IMU 位置真值（与 `getPosition()` 一致） |
+| 彩色短线 | 各图像帧相机光心发出的观测射线（`ray_cam` 经外参变换到世界系） |
+| IMU 子图 | 加速度、角速度（IMU 系）；位置与机体系速度 |
+
+### 12.4 与 VIO 仿真的关系
+
+```
+data_generator/
+  src/  ──► DataGenerator
+  vis/  ──► sim_generator_dump ──► output/sim_dump.json ──► python/visualize.py  （§12.1）
+         └─► bindings (vins_sim_data) + python/live_visualize.py                  （§12.2）
+standalone/simulation_standalone ──► vins_multi_simulation                        （完整 VIO）
+```
+
+二者仿真循环一致（`IMU_PER_IMG`、`3×MAX_TIME`）；差异仅为后者接入 `Estimator::processIMU` / `processImage`。

@@ -1,4 +1,8 @@
+# Editor / IDE
 *~
+.vscode/
+
+# ROS / upstream artifacts
 *.rviz
 ex_calib_result.yaml
 vins_result.csv
@@ -8,10 +12,39 @@ A3_rs/
 A3_rs.launch
 test/
 test.launch
-.vscode/
-**/build_standalone/
-Testing/
-log/
-build_tests/
-build/ 
 
+# Logs & runtime output
+log/
+vins_result_no_loop.csv
+sim_dump.json
+sim_vis*.png
+data_generator/vis/output/*
+!data_generator/vis/output/.gitkeep
+
+# --- CMake / build (all out-of-tree and in-tree build dirs) ---
+build/
+build_*/
+[Bb]uild/
+cmake-build-*/
+
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+Testing/
+_deps/
+
+# Compiled objects & libraries
+*.o
+*.a
+*.so
+*.so.*
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/

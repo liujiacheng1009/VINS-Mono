@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.10)
 project(vins_multi_standalone)
 
+option(BUILD_SIM_PYTHON "Build pybind11 module vins_sim_data for interactive Python" OFF)
+
 enable_testing()
 
 set(CMAKE_BUILD_TYPE Release)
@@ -42,6 +44,8 @@ target_link_libraries(vins_multi_simulation
     log_value::log_value
     pthread
 )
+
+add_subdirectory(../data_generator/vis ${CMAKE_BINARY_DIR}/data_generator_vis)
 
 add_executable(state_manager_smoke_test
     state_manager_smoke_test.cpp

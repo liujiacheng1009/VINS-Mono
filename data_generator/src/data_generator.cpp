@@ -8,18 +8,20 @@
 #define BIAS_ACC 0
 #define BIAS_GYR 1
 
-DataGenerator::DataGenerator()
+DataGenerator::DataGenerator(bool verbose)
 {
     srand(SEED);
     t = 0;
     current_id = 0;
+    quiet_ = !verbose;
 
     for (int i = 0; i < NUM_POINTS; i++)
     {
         pts[i * 3 + 0] = rand() % (6 * MAX_BOX) - 3 * MAX_BOX;
         pts[i * 3 + 1] = rand() % (6 * MAX_BOX) - 3 * MAX_BOX;
         pts[i * 3 + 2] = rand() % (6 * MAX_BOX) - 3 * MAX_BOX;
-        cout << "pts i " << i << " " << pts[i * 3 + 0] << " " << pts[i * 3 + 1] << " " << pts[i * 3 + 2] << endl;
+        if (verbose)
+            cout << "pts i " << i << " " << pts[i * 3 + 0] << " " << pts[i * 3 + 1] << " " << pts[i * 3 + 2] << endl;
     }
 
     if (NUMBER_OF_AP > 0) ap[0] = Vector3d(MAX_BOX, -MAX_BOX, MAX_BOX);
@@ -224,7 +226,8 @@ vector<pair<int, Vector3d>> DataGenerator::getImage()
     vector<pair<int, Vector3d>> image;
     Vector3d position = getPosition();
     Matrix3d quat = getRotation();
-    printf("max: %d\n", current_id);
+    if (!quiet_)
+        printf("max: %d\n", current_id);
 
     vector<int> ids[NUMBER_OF_CAMERA], gr_ids[NUMBER_OF_CAMERA];
     vector<Vector3d> cur_pts[NUMBER_OF_CAMERA];

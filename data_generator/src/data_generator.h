@@ -15,7 +15,7 @@ using namespace Eigen;
 class DataGenerator
 {
   public:
-    DataGenerator();
+    explicit DataGenerator(bool verbose = true);
     void update();
 
     double getTime();
@@ -33,6 +33,11 @@ class DataGenerator
     Vector3d getGyroscopeBias();
 
     vector<pair<int, Vector3d>> getImage();
+
+    int numCameras() const { return NUMBER_OF_CAMERA; }
+    Matrix3d getRic(int k) const { return Ric[k]; }
+    Vector3d getTic(int k) const { return Tic[k]; }
+    void setQuiet(bool quiet) { quiet_ = quiet; }
 
     static int const FREQ = 500;
     //static int const MAX_TIME = 10;
@@ -65,4 +70,5 @@ class DataGenerator
     normal_distribution<double> distribution;
 
     Vector3d Axis[6];
+    bool quiet_ = false;
 };

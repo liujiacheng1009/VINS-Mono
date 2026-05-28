@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Visualize DataGenerator dump: 3D trajectory, landmarks, observation rays, IMU signals."""
+"""Visualize DataGenerator dump: 3D trajectory, landmarks, observed features, IMU signals."""
 
 from __future__ import annotations
 
@@ -41,8 +41,8 @@ def _plot_3d_on_ax(
     ax,
     data: dict,
     frame_stride: int,
-    ray_length: float,
-    max_rays_per_frame: int,
+    _ray_length: float,
+    _max_rays_per_frame: int,
 ) -> None:
     landmarks = np.asarray(data["landmarks"], dtype=float)
     extrinsics = data["extrinsics"]
@@ -63,34 +63,49 @@ def _plot_3d_on_ax(
     traj = np.array([f["position"] for f in data["image_frames"]], dtype=float)
     ax.plot(traj[:, 0], traj[:, 1], traj[:, 2], "b-", linewidth=1.5, label="IMU path")
 
-    cmap = plt.cm.viridis
-    for fi, frame in enumerate(frames):
-        pos = np.asarray(frame["position"], dtype=float)
-        quat = np.asarray(frame["quaternion_wxyz"], dtype=float)
-        r_wc, t_wc = camera_pose_world(pos, quat, ric0, tic0)
-        color = cmap(fi / max(len(frames) - 1, 1))
-        ax.scatter([t_wc[0]], [t_wc[1]], [t_wc[2]], c=[color], s=8, alpha=0.6)
-
-        for ob in frame["observations"][:max_rays_per_frame]:
-            ray_cam = np.asarray(ob["ray_cam"], dtype=float)
-            if ray_cam[2] <= 1e-9:
-                continue
-            d_cam = ray_cam / np.linalg.norm(ray_cam)
-            d_world = r_wc @ d_cam
-            end = t_wc + ray_length * d_world
-            ax.plot(
-                [t_wc[0], end[0]],
-                [t_wc[1], end[1]],
-                [t_wc[2], end[2]],
-                color=color,
-                alpha=0.15,
-                linewidth=0.4,
+    # Current observed feature landmarks (last shown frame).
+    if frames:
+        last_obs = frames[-1].get("observations", [])
+        feat_ids = sorted({int(ob.get("feature_id", -1)) for ob in last_obs})
+        valid_ids = [fid for fid in feat_ids if 0 <= fid < len(landmarks)]
+        if valid_ids:
+            pts = landmarks[valid_ids]
+            ax.scatter(
+                pts[:, 0],
+                pts[:, 1],
+                pts[:, 2],
+                c="limegreen",
+                s=16,
+                alpha=0.9,
+                label="observed feat",
             )
+
+    # Show one camera frustum only (last shown frame).
+    if frames:
+        pos = np.asarray(frames[-1]["position"], dtype=float)
+        quat = np.asarray(frames[-1]["quaternion_wxyz"], dtype=float)
+        r_wc, t_wc = camera_pose_world(pos, quat, ric0, tic0)
+        s = 1.2
+        corners_cam = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [-0.4 * s, -0.3 * s, 1.0 * s],
+                [0.4 * s, -0.3 * s, 1.0 * s],
+                [0.4 * s, 0.3 * s, 1.0 * s],
+                [-0.4 * s, 0.3 * s, 1.0 * s],
+            ],
+            dtype=float,
+        )
+        corners_w = (r_wc @ corners_cam.T).T + t_wc.reshape(1, 3)
+        edges = [(0, 1), (0, 2), (0, 3), (0, 4), (1, 2), (2, 3), (3, 4), (4, 1)]
+        for i, j in edges:
+            seg = corners_w[[i, j]]
+            ax.plot(seg[:, 0], seg[:, 1], seg[:, 2], color="orangered", alpha=0.9, linewidth=1.2)
 
     ax.set_xlabel("X [m]")
     ax.set_ylabel("Y [m]")
     ax.set_zlabel("Z [m]")
-    ax.set_title("GT: trajectory, landmarks, observation rays")
+    ax.set_title("GT: trajectory, landmarks, observed feat")
     ax.legend(loc="upper right", fontsize=8)
     if hasattr(ax, "set_box_aspect"):
         ax.set_box_aspect([1, 1, 1])

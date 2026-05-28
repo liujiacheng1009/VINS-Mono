@@ -39,17 +39,17 @@ class DataGenerator
     Vector3d getTic(int k) const { return Tic[k]; }
     void setQuiet(bool quiet) { quiet_ = quiet; }
 
-    static int const FREQ = 500;
-    //static int const MAX_TIME = 10;
-    static int const MAX_TIME = 40;
-    static int const FOV = 90;
+    static constexpr int FREQ = 500;
+    //static constexpr int MAX_TIME = 10;
+    static constexpr int MAX_TIME = 40;
+    static constexpr int FOV = 90;
 
-    static int const NUMBER_OF_CAMERA = 1;
-    static int const NUMBER_OF_AP = 1;
-    static int const NUM_POINTS = 500;
-    static int const MAX_BOX = 10;
-    static int const IMU_PER_IMG = 50;
-    static int const IMU_PER_WIFI = 5;
+    static constexpr int NUMBER_OF_CAMERA = 1;
+    static constexpr int NUMBER_OF_AP = 1;
+    static constexpr int NUM_POINTS = 500;
+    static constexpr int MAX_BOX = 10;
+    static constexpr int IMU_PER_IMG = 50;
+    static constexpr int IMU_PER_WIFI = 5;
 
     vector<Vector3d> output_gr_pts;
     vector<Vector3d> output_Axis[6];

@@ -23,6 +23,7 @@ PYBIND11_MODULE(vins_sim_data, m)
         .def("get_gyroscope_bias", &DataGenerator::getGyroscopeBias)
         .def("get_cloud", &DataGenerator::getCloud)
         .def("get_image", &DataGenerator::getImage)
+        .def("get_observed_points", [](const DataGenerator &self) { return self.output_gr_pts; })
         .def("num_cameras", &DataGenerator::numCameras)
         .def("get_ric", &DataGenerator::getRic)
         .def("get_tic", &DataGenerator::getTic)
@@ -30,6 +31,7 @@ PYBIND11_MODULE(vins_sim_data, m)
 
     m.attr("FREQ") = DataGenerator::FREQ;
     m.attr("MAX_TIME") = DataGenerator::MAX_TIME;
+    m.attr("FOV") = DataGenerator::FOV;
     m.attr("IMU_PER_IMG") = DataGenerator::IMU_PER_IMG;
     m.attr("NUM_POINTS") = DataGenerator::NUM_POINTS;
 }

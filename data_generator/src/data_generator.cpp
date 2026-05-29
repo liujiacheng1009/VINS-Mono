@@ -1,5 +1,11 @@
 #include "data_generator.h"
 
+#include <stdexcept>
+
+// ODR definitions for static members exported to pybind (bindings.cpp).
+const int DataGenerator::FREQ;
+const int DataGenerator::MAX_TIME;
+
 #define SEED 1
 #define Y_COS 2
 #define Z_COS 2 * 2
@@ -9,42 +15,51 @@
 #define BIAS_GYR 1
 
 DataGenerator::DataGenerator(bool verbose)
+    : DataGenerator(DataGeneratorOptions::legacyDefaults(), verbose)
 {
+}
+
+DataGenerator::DataGenerator(const DataGeneratorOptions &options, bool verbose)
+    : num_cam_(options.num_cam),
+      camera_ids_(options.camera_ids),
+      ric_(options.ric),
+      tic_(options.tic),
+      fov_deg_(options.fov_deg),
+      num_points_(options.num_points),
+      imu_per_img_(options.imu_per_img),
+      before_feature_id_(static_cast<size_t>(options.num_cam)),
+      current_feature_id_(static_cast<size_t>(options.num_cam)),
+      quiet_(!verbose)
+{
+    if (num_cam_ < 1)
+        num_cam_ = 1;
+    if (static_cast<int>(camera_ids_.size()) != num_cam_)
+    {
+        camera_ids_.resize(static_cast<size_t>(num_cam_));
+        for (int i = 0; i < num_cam_; ++i)
+            camera_ids_[static_cast<size_t>(i)] = i;
+    }
+    for (int cam_id : camera_ids_)
+    {
+        if (ric_.find(cam_id) == ric_.end() || tic_.find(cam_id) == tic_.end())
+            throw std::runtime_error("DataGenerator: missing ric/tic for camera_id " + std::to_string(cam_id));
+    }
+
     srand(SEED);
     t = 0;
     current_id = 0;
-    quiet_ = !verbose;
 
-    for (int i = 0; i < NUM_POINTS; i++)
-    {
-        pts[i * 3 + 0] = rand() % (6 * MAX_BOX) - 3 * MAX_BOX;
-        pts[i * 3 + 1] = rand() % (6 * MAX_BOX) - 3 * MAX_BOX;
-        pts[i * 3 + 2] = rand() % (6 * MAX_BOX) - 3 * MAX_BOX;
-        if (verbose)
-            cout << "pts i " << i << " " << pts[i * 3 + 0] << " " << pts[i * 3 + 1] << " " << pts[i * 3 + 2] << endl;
-    }
+    initLandmarks(verbose);
+    initAxis();
 
-    if (NUMBER_OF_AP > 0) ap[0] = Vector3d(MAX_BOX, -MAX_BOX, MAX_BOX);
-    if (NUMBER_OF_AP > 1) ap[1] = Vector3d(-MAX_BOX, MAX_BOX, MAX_BOX);
-    if (NUMBER_OF_AP > 2) ap[2] = Vector3d(-MAX_BOX, -MAX_BOX, -MAX_BOX);
-    if (NUMBER_OF_AP > 3) ap[3] = Vector3d(MAX_BOX, MAX_BOX, -MAX_BOX);
-
-    Ric[0] << 0, 0, -1,
-        -1, 0, 0,
-        0, 1, 0;
-    Tic[0] << 0.0, 0.2, 0.6;
-    if (NUMBER_OF_CAMERA >= 2)
-    {
-        Ric[1] = Ric[0];
-        Tic[1] << 0.00, 0.00, 0.30;
-    }
-    if (NUMBER_OF_CAMERA >= 3)
-    {
-        Ric[2] << 0, 1, 0,
-            -1, 0, 0,
-            0, 0, 1;
-        Tic[2] << 0.00, 0.00, 0.15;
-    }
+    if (NUMBER_OF_AP > 0)
+        ap[0] = Vector3d(MAX_BOX, -MAX_BOX, MAX_BOX);
+    if (NUMBER_OF_AP > 1)
+        ap[1] = Vector3d(-MAX_BOX, MAX_BOX, MAX_BOX);
+    if (NUMBER_OF_AP > 2)
+        ap[2] = Vector3d(-MAX_BOX, -MAX_BOX, -MAX_BOX);
+    if (NUMBER_OF_AP > 3)
+        ap[3] = Vector3d(MAX_BOX, MAX_BOX, -MAX_BOX);
 
     acc_cov = 0.01 * 0.01 * Matrix3d::Identity();
     gyr_cov = 0.001 * 0.001 * Matrix3d::Identity();
@@ -52,11 +67,29 @@ DataGenerator::DataGenerator(bool verbose)
 
     generator = default_random_engine(SEED);
     distribution = normal_distribution<double>(0.0, 1);
+}
+
+void DataGenerator::initLandmarks(bool verbose)
+{
+    pts_.resize(static_cast<size_t>(num_points_ * 3));
+    for (int i = 0; i < num_points_; i++)
+    {
+        pts_[static_cast<size_t>(i * 3 + 0)] = rand() % (6 * MAX_BOX) - 3 * MAX_BOX;
+        pts_[static_cast<size_t>(i * 3 + 1)] = rand() % (6 * MAX_BOX) - 3 * MAX_BOX;
+        pts_[static_cast<size_t>(i * 3 + 2)] = rand() % (6 * MAX_BOX) - 3 * MAX_BOX;
+        if (verbose)
+            cout << "pts i " << i << " " << pts_[static_cast<size_t>(i * 3 + 0)] << " "
+                 << pts_[static_cast<size_t>(i * 3 + 1)] << " " << pts_[static_cast<size_t>(i * 3 + 2)] << endl;
+    }
+}
+
+void DataGenerator::initAxis()
+{
     Axis[0] = Vector3d(10, 0, 0);
-    Axis[1]= Vector3d(0, 10, 0);
+    Axis[1] = Vector3d(0, 10, 0);
     Axis[2] = Vector3d(0, 0, 10);
     Axis[3] = Vector3d(-10, 0, 0);
-    Axis[4]= Vector3d(0, -10, 0);
+    Axis[4] = Vector3d(0, -10, 0);
     Axis[5] = Vector3d(0, 0, -10);
 }
 
@@ -72,7 +105,8 @@ double DataGenerator::getTime()
 
 Vector3d DataGenerator::getPoint(int i)
 {
-    return Vector3d(pts[3 * i], pts[3 * i + 1], pts[3 * i + 2]);
+    return Vector3d(pts_[static_cast<size_t>(3 * i)], pts_[static_cast<size_t>(3 * i + 1)],
+                    pts_[static_cast<size_t>(3 * i + 2)]);
 }
 
 Vector3d DataGenerator::getAP(int i)
@@ -108,8 +142,10 @@ Vector3d DataGenerator::getPosition()
 
 Matrix3d DataGenerator::getRotation()
 {
-    //return Matrix3d::Identity();
-    return (AngleAxisd(30.0 / 180 * M_PI * sin(t / MAX_TIME * M_PI * 2), Vector3d::UnitX()) * AngleAxisd(40.0 / 180 * M_PI * sin(t / MAX_TIME * M_PI * 2), Vector3d::UnitY()) * AngleAxisd(0, Vector3d::UnitZ())).toRotationMatrix();
+    return (AngleAxisd(30.0 / 180 * M_PI * sin(t / MAX_TIME * M_PI * 2), Vector3d::UnitX()) *
+            AngleAxisd(40.0 / 180 * M_PI * sin(t / MAX_TIME * M_PI * 2), Vector3d::UnitY()) *
+            AngleAxisd(0, Vector3d::UnitZ()))
+        .toRotationMatrix();
 }
 
 Vector3d DataGenerator::getAngularVelocity()
@@ -120,7 +156,7 @@ Vector3d DataGenerator::getAngularVelocity()
     Matrix3d drot = (getRotation() - rot) / delta_t;
     t -= delta_t;
     Matrix3d skew = rot.inverse() * drot;
-    if(IMU_NOISE)
+    if (IMU_NOISE)
     {
         Vector3d disturb = Vector3d(distribution(generator) * sqrt(gyr_cov(0, 0)),
                                     distribution(generator) * sqrt(gyr_cov(1, 1)),
@@ -134,7 +170,6 @@ Vector3d DataGenerator::getAngularVelocity()
 #endif
         return Vector3d(skew(2, 1), -skew(2, 0), skew(1, 0));
     }
-
 }
 
 Vector3d DataGenerator::getVelocity()
@@ -169,8 +204,10 @@ Vector3d DataGenerator::getLinearAcceleration()
     if (t < MAX_TIME)
     {
         ddx = MAX_BOX / 2.0 * -cos(t / MAX_TIME * M_PI) * (1.0 / MAX_TIME * M_PI) * (1.0 / MAX_TIME * M_PI);
-        ddy = MAX_BOX / 2.0 * -cos(t / MAX_TIME * M_PI * Y_COS) * (1.0 / MAX_TIME * M_PI * Y_COS) * (1.0 / MAX_TIME * M_PI * Y_COS);
-        ddz = MAX_BOX / 2.0 * -cos(t / MAX_TIME * M_PI * Z_COS) * (1.0 / MAX_TIME * M_PI * Z_COS) * (1.0 / MAX_TIME * M_PI * Z_COS);
+        ddy = MAX_BOX / 2.0 * -cos(t / MAX_TIME * M_PI * Y_COS) * (1.0 / MAX_TIME * M_PI * Y_COS) *
+              (1.0 / MAX_TIME * M_PI * Y_COS);
+        ddz = MAX_BOX / 2.0 * -cos(t / MAX_TIME * M_PI * Z_COS) * (1.0 / MAX_TIME * M_PI * Z_COS) *
+              (1.0 / MAX_TIME * M_PI * Z_COS);
     }
     else if (t >= MAX_TIME && t < 2 * MAX_TIME)
     {
@@ -182,10 +219,12 @@ Vector3d DataGenerator::getLinearAcceleration()
     {
         double tt = t - 2 * MAX_TIME;
         ddx = MAX_BOX / 2.0 * -cos(tt / MAX_TIME * M_PI) * (1.0 / MAX_TIME * M_PI) * (1.0 / MAX_TIME * M_PI);
-        ddy = MAX_BOX / 2.0 * -cos(tt / MAX_TIME * M_PI * Y_COS) * (1.0 / MAX_TIME * M_PI * Y_COS) * (1.0 / MAX_TIME * M_PI * Y_COS);
-        ddz = MAX_BOX / 2.0 * -cos(tt / MAX_TIME * M_PI * Z_COS) * (1.0 / MAX_TIME * M_PI * Z_COS) * (1.0 / MAX_TIME * M_PI * Z_COS);
+        ddy = MAX_BOX / 2.0 * -cos(tt / MAX_TIME * M_PI * Y_COS) * (1.0 / MAX_TIME * M_PI * Y_COS) *
+              (1.0 / MAX_TIME * M_PI * Y_COS);
+        ddz = MAX_BOX / 2.0 * -cos(tt / MAX_TIME * M_PI * Z_COS) * (1.0 / MAX_TIME * M_PI * Z_COS) *
+              (1.0 / MAX_TIME * M_PI * Z_COS);
     }
-    if(IMU_NOISE)
+    if (IMU_NOISE)
     {
         Vector3d disturb = Vector3d(distribution(generator) * sqrt(acc_cov(0, 0)),
                                     distribution(generator) * sqrt(acc_cov(1, 1)),
@@ -198,9 +237,7 @@ Vector3d DataGenerator::getLinearAcceleration()
         return getRotation().inverse() * Vector3d(ddx, ddy, ddz + 9.805) + Vector3d(0.01, 0.02, 0.03);
 #endif
         return getRotation().inverse() * Vector3d(ddx, ddy, ddz + 9.805);
-        
     }
-
 }
 
 Vector3d DataGenerator::getAccelerometerBias()
@@ -229,21 +266,29 @@ vector<pair<int, Vector3d>> DataGenerator::getImage()
     if (!quiet_)
         printf("max: %d\n", current_id);
 
-    vector<int> ids[NUMBER_OF_CAMERA], gr_ids[NUMBER_OF_CAMERA];
-    vector<Vector3d> cur_pts[NUMBER_OF_CAMERA];
-    for (int k = 0; k < NUMBER_OF_CAMERA; k++)
+    const double fov_rad = M_PI * fov_deg_ / 2.0 / 180.0;
+
+    vector<vector<int>> ids(static_cast<size_t>(num_cam_));
+    vector<vector<int>> gr_ids(static_cast<size_t>(num_cam_));
+    vector<vector<Vector3d>> cur_pts(static_cast<size_t>(num_cam_));
+
+    for (int k = 0; k < num_cam_; k++)
     {
-        for (int i = 0; i < NUM_POINTS; i++)
+        const int cam_id = camera_ids_[static_cast<size_t>(k)];
+        const Matrix3d &R_ic = ric_.at(cam_id);
+        const Vector3d &t_ic = tic_.at(cam_id);
+
+        for (int i = 0; i < num_points_; i++)
         {
-            double xx = pts[i * 3 + 0] - position(0);
-            double yy = pts[i * 3 + 1] - position(1);
-            double zz = pts[i * 3 + 2] - position(2);
-            Vector3d local_point = Ric[k].inverse() * (quat.inverse() * Vector3d(xx, yy, zz) - Tic[k]);
+            double xx = pts_[static_cast<size_t>(i * 3 + 0)] - position(0);
+            double yy = pts_[static_cast<size_t>(i * 3 + 1)] - position(1);
+            double zz = pts_[static_cast<size_t>(i * 3 + 2)] - position(2);
+            Vector3d local_point = R_ic.inverse() * (quat.inverse() * Vector3d(xx, yy, zz) - t_ic);
             xx = local_point(0);
             yy = local_point(1);
             zz = local_point(2);
 
-            if (zz > 0.0 && std::fabs(atan2(xx, zz)) <= M_PI * FOV / 2 / 180 && std::fabs(atan2(yy, zz)) <= M_PI * FOV / 2 / 180)
+            if (zz > 0.0 && std::fabs(atan2(xx, zz)) <= fov_rad && std::fabs(atan2(yy, zz)) <= fov_rad)
             {
                 xx = xx / zz;
                 yy = yy / zz;
@@ -253,28 +298,29 @@ vector<pair<int, Vector3d>> DataGenerator::getImage()
                 yy += distribution(generator) * sqrt(pts_cov(1, 1));
 #endif
 
-                int n_id = before_feature_id[k].find(i) == before_feature_id[k].end() ? -1 /*current_id++*/ : before_feature_id[k][i];
-                ids[k].push_back(n_id);
-                gr_ids[k].push_back(i);
-                cur_pts[k].push_back(Vector3d(xx, yy, zz));
+                const int n_id = before_feature_id_[static_cast<size_t>(k)].count(i)
+                                     ? before_feature_id_[static_cast<size_t>(k)][i]
+                                     : -1;
+                ids[static_cast<size_t>(k)].push_back(n_id);
+                gr_ids[static_cast<size_t>(k)].push_back(i);
+                cur_pts[static_cast<size_t>(k)].push_back(Vector3d(xx, yy, zz));
             }
         }
 
         for (int i = 0; i < 6; i++)
         {
             output_Axis[i].clear();
-            Vector3d local_point;
-            local_point = Ric[k].inverse() * (quat.inverse() * (Axis[i] - position) - Tic[k]);
+            Vector3d local_point = R_ic.inverse() * (quat.inverse() * (Axis[i] - position) - t_ic);
             double xx = local_point(0);
             double yy = local_point(1);
             double zz = local_point(2);
-            if(zz > 0.0 && std::fabs(atan2(xx, zz)) <= M_PI * FOV / 2 / 180 && std::fabs(atan2(yy, zz)) <= M_PI * FOV / 2 / 180)
+            if (zz > 0.0 && std::fabs(atan2(xx, zz)) <= fov_rad && std::fabs(atan2(yy, zz)) <= fov_rad)
             {
                 xx = xx / zz;
                 yy = yy / zz;
                 zz = zz / zz;
                 output_Axis[i].push_back(Vector3d(xx, yy, zz));
-                local_point = Ric[k].inverse() * (quat.inverse() * (Axis[i] + Vector3d(1, 0, 0) - position) - Tic[k]);
+                local_point = R_ic.inverse() * (quat.inverse() * (Axis[i] + Vector3d(1, 0, 0) - position) - t_ic);
                 xx = local_point(0);
                 yy = local_point(1);
                 zz = local_point(2);
@@ -282,7 +328,7 @@ vector<pair<int, Vector3d>> DataGenerator::getImage()
                 yy = yy / zz;
                 zz = zz / zz;
                 output_Axis[i].push_back(Vector3d(xx, yy, zz));
-                local_point = Ric[k].inverse() * (quat.inverse() * (Axis[i] + Vector3d(0, 1, 0) - position) - Tic[k]);
+                local_point = R_ic.inverse() * (quat.inverse() * (Axis[i] + Vector3d(0, 1, 0) - position) - t_ic);
                 xx = local_point(0);
                 yy = local_point(1);
                 zz = local_point(2);
@@ -290,7 +336,7 @@ vector<pair<int, Vector3d>> DataGenerator::getImage()
                 yy = yy / zz;
                 zz = zz / zz;
                 output_Axis[i].push_back(Vector3d(xx, yy, zz));
-                local_point = Ric[k].inverse() * (quat.inverse() * (Axis[i] + Vector3d(0, 0, 1) - position) - Tic[k]);
+                local_point = R_ic.inverse() * (quat.inverse() * (Axis[i] + Vector3d(0, 0, 1) - position) - t_ic);
                 xx = local_point(0);
                 yy = local_point(1);
                 zz = local_point(2);
@@ -303,63 +349,42 @@ vector<pair<int, Vector3d>> DataGenerator::getImage()
     }
 
     output_gr_pts.clear();
-    for (auto i : gr_ids[0])
+    if (!gr_ids.empty())
     {
-        output_gr_pts.emplace_back(pts[i * 3 + 0], pts[i * 3 + 1], pts[i * 3 + 2]);
+        for (auto i : gr_ids[0])
+            output_gr_pts.emplace_back(pts_[static_cast<size_t>(i * 3 + 0)], pts_[static_cast<size_t>(i * 3 + 1)],
+                                       pts_[static_cast<size_t>(i * 3 + 2)]);
     }
 
-    //for (int k = 0; k < 1/* NUMBER_OF_CAMERA - 1 */; k++)
-    //{
-    //    for (int i = 0; i < int(ids[k].size()); i++)
-    //    {
-    //        if (ids[k][i] != -1)
-    //            continue;
-    //        for (int j = 0; j < int(ids[k + 1].size()); j++)
-    //            if (ids[k + 1][j] == -1 && gr_ids[k][i] == gr_ids[k + 1][j])
-    //                ids[k][i] = ids[k + 1][j] = current_id++;
-    //    }
-    //}
-
-    for (int k = 0; k < NUMBER_OF_CAMERA; k++)
+    for (int k = 0; k < num_cam_; k++)
     {
-        for (int i = 0; i < int(ids[k].size()); i++)
+        auto &id_list = ids[static_cast<size_t>(k)];
+        auto &gr = gr_ids[static_cast<size_t>(k)];
+        for (size_t i = 0; i < id_list.size(); i++)
         {
-            if (ids[k][i] == -1)
-                ids[k][i] = current_id++;
-            current_feature_id[k][gr_ids[k][i]] = ids[k][i];
+            if (id_list[i] == -1)
+                id_list[i] = current_id++;
+            current_feature_id_[static_cast<size_t>(k)][gr[i]] = id_list[i];
         }
-        std::swap(before_feature_id[k], current_feature_id[k]);
-        current_feature_id[k].clear();
+        std::swap(before_feature_id_[static_cast<size_t>(k)], current_feature_id_[static_cast<size_t>(k)]);
+        current_feature_id_[static_cast<size_t>(k)].clear();
     }
 
-    for (int k = 0; k < NUMBER_OF_CAMERA; k++)
+    for (int k = 0; k < num_cam_; k++)
     {
-        if (k != 1)
-        {
-            for (unsigned int i = 0; i < ids[k].size(); i++)
-                image.push_back(make_pair(ids[k][i] * NUMBER_OF_CAMERA + k, cur_pts[k][i]));
-        }
-        else if (k == 1)
-        {
-            for (unsigned int i = 0; i < ids[k].size(); i++)
-            {
-                if (before_feature_id[0].find(gr_ids[k][i]) != before_feature_id[0].end())
-                    image.push_back(make_pair(before_feature_id[0][gr_ids[k][i]] * NUMBER_OF_CAMERA + k, cur_pts[k][i]));
-            }
-        }
+        const auto &id_list = ids[static_cast<size_t>(k)];
+        const auto &pts_list = cur_pts[static_cast<size_t>(k)];
+        for (size_t i = 0; i < id_list.size(); i++)
+            image.push_back(make_pair(id_list[i] * num_cam_ + k, pts_list[i]));
     }
+
     return image;
 }
 
 vector<Vector3d> DataGenerator::getCloud()
 {
     vector<Vector3d> cloud;
-    for (int i = 0; i < NUM_POINTS; i++)
-    {
-        double xx = pts[i * 3 + 0];
-        double yy = pts[i * 3 + 1];
-        double zz = pts[i * 3 + 2];
-        cloud.push_back(Vector3d(xx, yy, zz));
-    }
+    for (int i = 0; i < num_points_; i++)
+        cloud.push_back(getPoint(i));
     return cloud;
 }

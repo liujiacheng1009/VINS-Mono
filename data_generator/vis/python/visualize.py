@@ -37,18 +37,105 @@ def camera_pose_world(position: np.ndarray, quat: np.ndarray, ric: np.ndarray, t
     return r_wc, t_wc
 
 
+def _camera_colors(num_cam: int) -> np.ndarray:
+    return plt.cm.tab10(np.linspace(0, 1, max(num_cam, 1)))
+
+
+def _parse_extrinsics(extrinsics: list) -> list[dict]:
+    return [
+        {
+            "slot": int(ex.get("slot", i)),
+            "camera_id": int(ex.get("camera_id", ex.get("slot", i))),
+            "ric": np.asarray(ex["ric"], dtype=float),
+            "tic": np.asarray(ex["tic"], dtype=float),
+        }
+        for i, ex in enumerate(extrinsics)
+    ]
+
+
+def _plot_frustum(ax, r_wc: np.ndarray, t_wc: np.ndarray, color, scale: float = 1.2) -> None:
+    s = scale
+    corners_cam = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [-0.4 * s, -0.3 * s, 1.0 * s],
+            [0.4 * s, -0.3 * s, 1.0 * s],
+            [0.4 * s, 0.3 * s, 1.0 * s],
+            [-0.4 * s, 0.3 * s, 1.0 * s],
+        ],
+        dtype=float,
+    )
+    corners_w = (r_wc @ corners_cam.T).T + t_wc.reshape(1, 3)
+    edges = [(0, 1), (0, 2), (0, 3), (0, 4), (1, 2), (2, 3), (3, 4), (4, 1)]
+    for i, j in edges:
+        seg = corners_w[[i, j]]
+        ax.plot(seg[:, 0], seg[:, 1], seg[:, 2], color=color, alpha=0.9, linewidth=1.2)
+
+
+def _ray_world_endpoints(
+    position: np.ndarray,
+    quat: np.ndarray,
+    extrinsics: list[dict],
+    observations: list,
+    ray_length: float,
+    max_rays: int,
+) -> dict[int, np.ndarray]:
+    """Map camera_id -> Nx3 world points at ray_length along each observation ray."""
+    by_cam: dict[int, list[np.ndarray]] = {}
+    for ob in observations[:max_rays]:
+        cam_id = int(ob["camera_id"])
+        ray = np.asarray(ob["ray_cam"], dtype=float).reshape(3)
+        norm = np.linalg.norm(ray)
+        if norm < 1e-9:
+            continue
+        ray = ray / norm
+        ex = next((e for e in extrinsics if e["camera_id"] == cam_id), None)
+        if ex is None:
+            continue
+        r_wc, t_wc = camera_pose_world(position, quat, ex["ric"], ex["tic"])
+        pt_w = t_wc + ray_length * (r_wc @ ray)
+        by_cam.setdefault(cam_id, []).append(pt_w)
+    return {cid: np.stack(pts, axis=0) for cid, pts in by_cam.items() if pts}
+
+
+def _obs_uv(ray_cam: np.ndarray) -> np.ndarray | None:
+    z = float(ray_cam[2])
+    if z <= 1e-9:
+        return None
+    return np.array([ray_cam[0] / z, ray_cam[1] / z], dtype=float)
+
+
+def _plot_fov_panel(ax, observations: list, color, camera_id: int, title: str) -> None:
+    uv = []
+    for ob in observations:
+        if int(ob["camera_id"]) != camera_id:
+            continue
+        pt = _obs_uv(np.asarray(ob["ray_cam"], dtype=float))
+        if pt is not None:
+            uv.append(pt)
+    if uv:
+        uv_arr = np.stack(uv, axis=0)
+        ax.scatter(uv_arr[:, 0], uv_arr[:, 1], c=[color], s=14, alpha=0.9)
+    ax.set_title(title, fontsize=9)
+    ax.set_xlabel("x / z", fontsize=7)
+    ax.set_ylabel("y / z", fontsize=7)
+    ax.grid(True, alpha=0.25)
+    ax.tick_params(labelsize=6)
+    ax.set_aspect("equal", adjustable="box")
+
+
 def _plot_3d_on_ax(
     ax,
     data: dict,
     frame_stride: int,
-    _ray_length: float,
-    _max_rays_per_frame: int,
+    ray_length: float,
+    max_rays_per_frame: int,
+    colors: np.ndarray,
+    cams: list[dict],
 ) -> None:
     landmarks = np.asarray(data["landmarks"], dtype=float)
-    extrinsics = data["extrinsics"]
     frames = data["image_frames"][::frame_stride]
-    ric0 = np.asarray(extrinsics[0]["ric"], dtype=float)
-    tic0 = np.asarray(extrinsics[0]["tic"], dtype=float)
+    num_cam = int(data.get("num_cam", len(cams)))
 
     ax.scatter(
         landmarks[:, 0],
@@ -63,52 +150,67 @@ def _plot_3d_on_ax(
     traj = np.array([f["position"] for f in data["image_frames"]], dtype=float)
     ax.plot(traj[:, 0], traj[:, 1], traj[:, 2], "b-", linewidth=1.5, label="IMU path")
 
-    # Current observed feature landmarks (last shown frame).
     if frames:
-        last_obs = frames[-1].get("observations", [])
-        feat_ids = sorted({int(ob.get("feature_id", -1)) for ob in last_obs})
-        valid_ids = [fid for fid in feat_ids if 0 <= fid < len(landmarks)]
-        if valid_ids:
-            pts = landmarks[valid_ids]
-            ax.scatter(
-                pts[:, 0],
-                pts[:, 1],
-                pts[:, 2],
-                c="limegreen",
-                s=16,
-                alpha=0.9,
-                label="observed feat",
-            )
+        last = frames[-1]
+        pos = np.asarray(last["position"], dtype=float)
+        quat = np.asarray(last["quaternion_wxyz"], dtype=float)
+        observations = last.get("observations", [])
 
-    # Show one camera frustum only (last shown frame).
-    if frames:
-        pos = np.asarray(frames[-1]["position"], dtype=float)
-        quat = np.asarray(frames[-1]["quaternion_wxyz"], dtype=float)
-        r_wc, t_wc = camera_pose_world(pos, quat, ric0, tic0)
-        s = 1.2
-        corners_cam = np.array(
-            [
-                [0.0, 0.0, 0.0],
-                [-0.4 * s, -0.3 * s, 1.0 * s],
-                [0.4 * s, -0.3 * s, 1.0 * s],
-                [0.4 * s, 0.3 * s, 1.0 * s],
-                [-0.4 * s, 0.3 * s, 1.0 * s],
-            ],
-            dtype=float,
-        )
-        corners_w = (r_wc @ corners_cam.T).T + t_wc.reshape(1, 3)
-        edges = [(0, 1), (0, 2), (0, 3), (0, 4), (1, 2), (2, 3), (3, 4), (4, 1)]
-        for i, j in edges:
-            seg = corners_w[[i, j]]
-            ax.plot(seg[:, 0], seg[:, 1], seg[:, 2], color="orangered", alpha=0.9, linewidth=1.2)
+        endpoints = _ray_world_endpoints(pos, quat, cams, observations, ray_length, max_rays_per_frame)
+        for k, cam in enumerate(cams):
+            cid = cam["camera_id"]
+            color = colors[k % len(colors)]
+            r_wc, t_wc = camera_pose_world(pos, quat, cam["ric"], cam["tic"])
+            _plot_frustum(ax, r_wc, t_wc, color)
+            ax.plot([t_wc[0]], [t_wc[1]], [t_wc[2]], "o", color=color, markersize=7, label=f"cam {cid}")
+            pts = endpoints.get(cid)
+            if pts is not None and len(pts) > 0:
+                ax.scatter(
+                    pts[:, 0],
+                    pts[:, 1],
+                    pts[:, 2],
+                    c=[color],
+                    s=18,
+                    alpha=0.85,
+                    label=f"obs cam{cid}",
+                )
 
+        if num_cam == 1 and not endpoints:
+            feat_ids = sorted({int(ob.get("feature_id", -1)) for ob in observations})
+            valid_ids = [fid for fid in feat_ids if 0 <= fid < len(landmarks)]
+            if valid_ids:
+                pts = landmarks[valid_ids]
+                ax.scatter(
+                    pts[:, 0],
+                    pts[:, 1],
+                    pts[:, 2],
+                    c="limegreen",
+                    s=16,
+                    alpha=0.9,
+                    label="observed feat",
+                )
+
+    title = "GT: trajectory, landmarks"
+    if num_cam >= 2:
+        title += f" ({num_cam} cams, color by camera)"
+    ax.set_title(title)
     ax.set_xlabel("X [m]")
     ax.set_ylabel("Y [m]")
     ax.set_zlabel("Z [m]")
-    ax.set_title("GT: trajectory, landmarks, observed feat")
-    ax.legend(loc="upper right", fontsize=8)
+    ax.legend(loc="upper right", fontsize=7)
     if hasattr(ax, "set_box_aspect"):
         ax.set_box_aspect([1, 1, 1])
+
+
+def _plot_fov_panels(fig, gs_fov, data: dict, frame_stride: int, colors: np.ndarray, cams: list[dict]) -> None:
+    frames = data["image_frames"][::frame_stride]
+    if not frames:
+        return
+    observations = frames[-1].get("observations", [])
+    fov_spec = gs_fov.subgridspec(len(cams), 1, hspace=0.4)
+    for k, cam in enumerate(cams):
+        ax = fig.add_subplot(fov_spec[k])
+        _plot_fov_panel(ax, observations, colors[k % len(colors)], cam["camera_id"], f"cam {cam['camera_id']} FOV")
 
 
 def _plot_imu_on_axes(axes, data: dict) -> None:
@@ -145,19 +247,35 @@ def build_figure(
     show_3d: bool,
     show_imu: bool,
 ) -> plt.Figure:
+    num_cam = int(data.get("num_cam", 1))
+    cams = _parse_extrinsics(data["extrinsics"])
+    colors = _camera_colors(len(cams) if cams else num_cam)
+    multi_cam = num_cam >= 2 and len(cams) >= 2
+
     if show_3d and show_imu:
-        fig = plt.figure(figsize=(11, 12), constrained_layout=True)
-        gs = gridspec.GridSpec(4, 1, height_ratios=[2.8, 1.0, 1.0, 1.0], figure=fig)
-        ax3d = fig.add_subplot(gs[0], projection="3d")
-        ax_acc = fig.add_subplot(gs[1])
-        ax_gyr = fig.add_subplot(gs[2], sharex=ax_acc)
-        ax_kin = fig.add_subplot(gs[3], sharex=ax_acc)
-        _plot_3d_on_ax(ax3d, data, frame_stride, ray_length, max_rays)
-        _plot_imu_on_axes([ax_acc, ax_gyr, ax_kin], data)
+        fig_w = 14 if multi_cam else 11
+        fig = plt.figure(figsize=(fig_w, 12), constrained_layout=True)
+        if multi_cam:
+            gs = gridspec.GridSpec(4, 2, width_ratios=[3.0, 1.0], height_ratios=[2.8, 1.0, 1.0, 1.0], figure=fig)
+            ax3d = fig.add_subplot(gs[0, 0], projection="3d")
+            _plot_fov_panels(fig, gs[0, 1], data, frame_stride, colors, cams)
+            imu_axes = [fig.add_subplot(gs[i, :]) for i in (1, 2, 3)]
+        else:
+            gs = gridspec.GridSpec(4, 1, height_ratios=[2.8, 1.0, 1.0, 1.0], figure=fig)
+            ax3d = fig.add_subplot(gs[0], projection="3d")
+            imu_axes = [fig.add_subplot(gs[i]) for i in (1, 2, 3)]
+        _plot_3d_on_ax(ax3d, data, frame_stride, ray_length, max_rays, colors, cams)
+        _plot_imu_on_axes(imu_axes, data)
     elif show_3d:
-        fig = plt.figure(figsize=(10, 8))
-        ax3d = fig.add_subplot(111, projection="3d")
-        _plot_3d_on_ax(ax3d, data, frame_stride, ray_length, max_rays)
+        if multi_cam:
+            fig = plt.figure(figsize=(13, 8), constrained_layout=True)
+            gs = gridspec.GridSpec(1, 2, width_ratios=[3.0, 1.0], figure=fig)
+            ax3d = fig.add_subplot(gs[0, 0], projection="3d")
+            _plot_fov_panels(fig, gs[0, 1], data, frame_stride, colors, cams)
+        else:
+            fig = plt.figure(figsize=(10, 8))
+            ax3d = fig.add_subplot(111, projection="3d")
+        _plot_3d_on_ax(ax3d, data, frame_stride, ray_length, max_rays, colors, cams)
     elif show_imu:
         fig, imu_axes = plt.subplots(3, 1, figsize=(11, 8), sharex=True)
         _plot_imu_on_axes(list(imu_axes), data)
@@ -172,18 +290,25 @@ def main():
     parser = argparse.ArgumentParser(description="Visualize sim_generator_dump JSON output.")
     parser.add_argument("dump", type=Path, nargs="?", default=Path("sim_dump.json"))
     parser.add_argument("--frame-stride", type=int, default=5, help="Plot every N-th image frame in 3D")
-    parser.add_argument("--ray-length", type=float, default=3.0, help="Observation ray length [m]")
-    parser.add_argument("--max-rays", type=int, default=80, help="Max rays per displayed frame")
+    parser.add_argument("--ray-length", type=float, default=3.0, help="Observation ray length [m] in 3D")
+    parser.add_argument("--max-rays", type=int, default=80, help="Max rays per camera in 3D view")
     parser.add_argument("--no-3d", action="store_true")
     parser.add_argument("--no-imu", action="store_true")
     parser.add_argument("--save", type=Path, default=None, help="Save figure (headless)")
     args = parser.parse_args()
 
     data = load_dump(args.dump)
+    num_cam = int(data.get("num_cam", 1))
     print(
         f"Loaded {args.dump}: imu={len(data['imu']['t'])}, "
-        f"frames={len(data['image_frames'])}, cam={data['num_cam']}"
+        f"frames={len(data['image_frames'])}, cam={num_cam}"
     )
+    if num_cam >= 2 and data["image_frames"]:
+        from collections import Counter
+
+        obs = data["image_frames"][-1].get("observations", [])
+        by_cam = Counter(int(o["camera_id"]) for o in obs)
+        print(f"  last frame obs by camera_id: {dict(sorted(by_cam.items()))}")
 
     fig = build_figure(
         data,

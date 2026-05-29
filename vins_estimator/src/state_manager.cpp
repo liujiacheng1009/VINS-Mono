@@ -55,11 +55,11 @@ void StateManager::initFromConfig()
 {
     allocateStorage();
     const auto &cfg = vinsParameters();
-    const int num_cam = static_cast<int>(std::min(cfg.ric().size(), ric_.size()));
-    for (int i = 0; i < num_cam; i++)
+    const int num_cam = std::min(cfg.numOfCam(), static_cast<int>(ric_.size()));
+    for (int slot = 0; slot < num_cam; ++slot)
     {
-        tic_[i] = cfg.tic()[i];
-        ric_[i] = cfg.ric()[i];
+        ric_[slot] = cfg.ric(slot);
+        tic_[slot] = cfg.tic(slot);
     }
     td_ = cfg.td();
 }

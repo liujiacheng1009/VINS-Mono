@@ -10,6 +10,8 @@
 #include <vector>
 
 #include "../src/data_generator.h"
+#include "../src/data_generator_config.h"
+#include "../../vins_estimator/src/parameters.h"
 #include <eigen3/Eigen/Dense>
 #include <eigen3/Eigen/Geometry>
 
@@ -48,13 +50,38 @@ std::string mat3ToJson(const Eigen::Matrix3d &R)
 
 int main(int argc, char **argv)
 {
-    const std::string out_path = (argc > 1) ? argv[1] : std::string("sim_dump.json");
+    const std::string out_path = (argc > 1) ? argv[1] : std::string("data_generator/vis/output/sim_dump.json");
     const double duration_scale = (argc > 2) ? std::stod(argv[2]) : 3.0;
+    const std::string config_path =
+        (argc > 3) ? argv[3] : std::string("config/simulation/simulation_config.yaml");
 
-    DataGenerator generator(false);
+    try
+    {
+        readParameters(config_path);
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "Failed to readParameters(" << config_path << "): " << e.what() << "\n";
+        return 1;
+    }
+
+    DataGeneratorOptions opts;
+    try
+    {
+        opts = dataGeneratorOptionsFromVinsParameters();
+        dataGeneratorLoadDefaultConfig(opts);
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "Failed to build DataGenerator options: " << e.what() << "\n";
+        return 1;
+    }
+
+    DataGenerator generator(opts, false);
     generator.setQuiet(true);
 
     const int num_cam = generator.numCameras();
+    const int imu_per_img = generator.imuPerImage();
     const double t_end = duration_scale * DataGenerator::MAX_TIME;
 
     std::vector<double> imu_t;
@@ -85,7 +112,7 @@ int main(int argc, char **argv)
         imu_gyr.push_back(generator.getAngularVelocity());
         imu_quat.push_back(quat);
 
-        if (publish_count % DataGenerator::IMU_PER_IMG == 0)
+        if (publish_count % imu_per_img == 0)
         {
             const auto raw = generator.getImage();
             FrameRecord frame;
@@ -96,8 +123,9 @@ int main(int argc, char **argv)
             {
                 const int packed_id = id_pts.first;
                 const int feature_id = packed_id / num_cam;
-                const int camera_id = packed_id % num_cam;
-                frame.observations.emplace_back(packed_id, feature_id, camera_id, id_pts.second);
+                const int slot = packed_id % num_cam;
+                const int cam_id = generator.cameraId(slot);
+                frame.observations.emplace_back(packed_id, feature_id, cam_id, id_pts.second);
             }
             frames.push_back(std::move(frame));
         }
@@ -121,19 +149,29 @@ int main(int argc, char **argv)
     out << "{\n";
     out << "\"version\":1,\n";
     out << "\"num_cam\":" << num_cam << ",\n";
+    out << "\"camera_ids\":[";
+    for (int k = 0; k < num_cam; ++k)
+    {
+        if (k > 0)
+            out << ",";
+        out << generator.cameraId(k);
+    }
+    out << "],\n";
     out << "\"freq\":" << DataGenerator::FREQ << ",\n";
-    out << "\"imu_per_img\":" << DataGenerator::IMU_PER_IMG << ",\n";
+    out << "\"imu_per_img\":" << imu_per_img << ",\n";
     out << "\"max_time\":" << DataGenerator::MAX_TIME << ",\n";
     out << "\"duration\":" << t_end << ",\n";
+    out << "\"config_file\":\"" << config_path << "\",\n";
 
     out << "\"extrinsics\":[\n";
     for (int k = 0; k < num_cam; ++k)
     {
         if (k > 0)
             out << ",\n";
-        out << "{\"camera_id\":" << k
-            << ",\"ric\":" << mat3ToJson(generator.getRic(k))
-            << ",\"tic\":" << vec3ToJson(generator.getTic(k)) << "}";
+        out << "{\"slot\":" << k
+            << ",\"camera_id\":" << generator.cameraId(k)
+            << ",\"ric\":" << mat3ToJson(generator.getRic(generator.cameraId(k)))
+            << ",\"tic\":" << vec3ToJson(generator.getTic(generator.cameraId(k))) << "}";
     }
     out << "],\n";
 
@@ -220,7 +258,7 @@ int main(int argc, char **argv)
     }
     out << "\n]\n}\n";
 
-    std::cout << "Wrote " << out_path << " (imu samples=" << imu_t.size()
-              << ", image frames=" << frames.size() << ", landmarks=" << cloud.size() << ")\n";
+    std::cout << "Wrote " << out_path << " (config=" << config_path << ", imu=" << imu_t.size()
+              << ", frames=" << frames.size() << ", cam=" << num_cam << ")\n";
     return 0;
 }

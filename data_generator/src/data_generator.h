@@ -1,13 +1,17 @@
+#pragma once
+
 #include <cstdlib>
 #include <cmath>
 #include <vector>
 #include <tuple>
 #include <map>
-#include <algorithm>
+#include <unordered_map>
 #include <random>
 #include <iostream>
 #include <eigen3/Eigen/Dense>
 #include <eigen3/Eigen/Geometry>
+
+#include "data_generator_options.h"
 
 using namespace std;
 using namespace Eigen;
@@ -16,6 +20,8 @@ class DataGenerator
 {
   public:
     explicit DataGenerator(bool verbose = true);
+    explicit DataGenerator(const DataGeneratorOptions &options, bool verbose = false);
+
     void update();
 
     double getTime();
@@ -32,37 +38,48 @@ class DataGenerator
     Vector3d getAccelerometerBias();
     Vector3d getGyroscopeBias();
 
+    /** packed_id = track_id * num_cam + slot */
     vector<pair<int, Vector3d>> getImage();
 
-    int numCameras() const { return NUMBER_OF_CAMERA; }
-    Matrix3d getRic(int k) const { return Ric[k]; }
-    Vector3d getTic(int k) const { return Tic[k]; }
+    int numCameras() const { return num_cam_; }
+    const std::vector<int> &cameraIds() const { return camera_ids_; }
+    int cameraId(int slot) const { return camera_ids_.at(static_cast<size_t>(slot)); }
+    /** Extrinsic for physical camera \a cam_id (key in ric_/tic_ map). */
+    Matrix3d getRic(int cam_id) const { return ric_.at(cam_id); }
+    Vector3d getTic(int cam_id) const { return tic_.at(cam_id); }
     void setQuiet(bool quiet) { quiet_ = quiet; }
 
-    static constexpr int FREQ = 500;
-    //static constexpr int MAX_TIME = 10;
-    static constexpr int MAX_TIME = 40;
-    static constexpr int FOV = 90;
+    int imuPerImage() const { return imu_per_img_; }
+    int fovDeg() const { return fov_deg_; }
+    int numPoints() const { return num_points_; }
 
-    static constexpr int NUMBER_OF_CAMERA = 1;
-    static constexpr int NUMBER_OF_AP = 1;
-    static constexpr int NUM_POINTS = 500;
-    static constexpr int MAX_BOX = 10;
-    static constexpr int IMU_PER_IMG = 50;
-    static constexpr int IMU_PER_WIFI = 5;
+    static int const FREQ = 500;
+    static int const MAX_TIME = 40;
+    static int const NUMBER_OF_AP = 1;
+    static int const MAX_BOX = 10;
+    static int const IMU_PER_WIFI = 5;
 
     vector<Vector3d> output_gr_pts;
     vector<Vector3d> output_Axis[6];
 
   private:
-    int pts[NUM_POINTS * 3];
+    void initLandmarks(bool verbose);
+    void initAxis();
+
+    int num_cam_;
+    std::vector<int> camera_ids_;
+    std::unordered_map<int, Eigen::Matrix3d> ric_;
+    std::unordered_map<int, Eigen::Vector3d> tic_;
+    int fov_deg_;
+    int num_points_;
+    int imu_per_img_;
+
+    std::vector<int> pts_;
     double t;
-    map<int, int> before_feature_id[NUMBER_OF_CAMERA];
-    map<int, int> current_feature_id[NUMBER_OF_CAMERA];
+    std::vector<std::map<int, int>> before_feature_id_;
+    std::vector<std::map<int, int>> current_feature_id_;
     int current_id;
 
-    Matrix3d Ric[NUMBER_OF_CAMERA];
-    Vector3d Tic[NUMBER_OF_CAMERA];
     Vector3d ap[NUMBER_OF_AP];
     Matrix3d acc_cov, gyr_cov;
     Matrix2d pts_cov;

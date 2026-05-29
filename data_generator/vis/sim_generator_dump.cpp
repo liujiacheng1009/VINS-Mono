@@ -7,6 +7,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "../src/data_generator.h"
@@ -93,6 +94,7 @@ int main(int argc, char **argv)
         double t;
         Eigen::Vector3d position;
         Eigen::Quaterniond quat;
+        std::vector<int> observed_landmark_ids;
         std::vector<std::tuple<int, int, int, Eigen::Vector3d>> observations;
     };
     std::vector<FrameRecord> frames;
@@ -119,6 +121,11 @@ int main(int argc, char **argv)
             frame.t = t;
             frame.position = pos;
             frame.quat = quat;
+            std::unordered_set<int> union_lm;
+            for (const auto &ids : generator.output_gr_ids)
+                for (int lm : ids)
+                    union_lm.insert(lm);
+            frame.observed_landmark_ids.assign(union_lm.begin(), union_lm.end());
             for (const auto &id_pts : raw)
             {
                 const int packed_id = id_pts.first;
@@ -241,7 +248,14 @@ int main(int argc, char **argv)
         out << "{\"t\":" << f.t
             << ",\"position\":" << vec3ToJson(f.position)
             << ",\"quaternion_wxyz\":" << quatToJson(f.quat)
-            << ",\"observations\":[";
+            << ",\"observed_landmark_ids\":[";
+        for (size_t li = 0; li < f.observed_landmark_ids.size(); ++li)
+        {
+            if (li > 0)
+                out << ",";
+            out << f.observed_landmark_ids[li];
+        }
+        out << "],\"observations\":[";
         for (size_t oi = 0; oi < f.observations.size(); ++oi)
         {
             int packed_id, feature_id, camera_id;

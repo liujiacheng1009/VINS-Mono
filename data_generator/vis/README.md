@@ -24,20 +24,20 @@ data_generator/
 - Python：`matplotlib`、`numpy`（`pip install -r python/requirements.txt`）
 - 在线模式额外需要本机 **pybind11**：`sudo apt install pybind11-dev` 或 `pip3 install pybind11`
 
-## 双相机支持范围
+## 多相机支持范围（默认四目）
 
 | 环节 | 状态 | 说明 |
 |------|------|------|
-| 配置 | ✅ | `config/simulation/simulation_config.yaml`：`num_of_cam: 2`，`camera_ids: [0, 1]` |
+| 配置 | ✅ | `simulation_config.yaml`：`num_of_cam: 4`，`camera_ids: [0,1,2,3]`；外参见 `cam_chain.yaml` |
 | 观测生成 | ✅ | 每 slot 独立 track；`packed_id = feature_id * num_cam + slot` |
 | JSON 导出 | ✅ | `num_cam`、`extrinsics[]`、每条观测含 `camera_id` |
 | VIO 仿真 | ✅ | `vins_multi_simulation` 解包并送入 `ImageFrameInput` |
-| 离线可视化 | ⚠️ | 可加载双相机 dump；3D 视锥仅 cam0，观测点为两路合并 |
-| 在线可视化 | ✅ | 每路相机独立视锥 + FOV 面板（按 cam_id 分色） |
+| 离线可视化 | ✅ | 3D 分色射线/视锥；≥4 目时 FOV 为 2×2 面板 |
+| 在线可视化 | ✅ | 每路独立视锥 + FOV（四目为右侧 2×2） |
 
-切回单目：将 `simulation_config.yaml` 中 `num_of_cam: 1`、`camera_ids: [0]`。
+切回单目/双目：修改 `num_of_cam` 与 `camera_ids`（例如 `[0]` 或 `[0,1]`）。
 
-## 双相机验证
+## 多相机验证（四目）
 
 在**仓库根目录**执行以下步骤。预期：各步无 crash，且两路相机均有观测。
 
@@ -57,7 +57,7 @@ cmake --build build_standalone --target sim_generator_dump vins_multi_simulation
   config/simulation/simulation_config.yaml
 ```
 
-终端应出现 `cam=2`。进一步检查两路观测：
+终端应出现 `cam=4`。进一步检查四路观测：
 
 ```bash
 python3 - <<'PY'
@@ -65,13 +65,13 @@ import json
 from collections import Counter
 with open("data_generator/vis/output/sim_dump.json") as f:
     d = json.load(f)
-assert d["num_cam"] == 2, d["num_cam"]
-assert d["camera_ids"] == [0, 1], d["camera_ids"]
+assert d["num_cam"] == 4, d["num_cam"]
+assert d["camera_ids"] == [0, 1, 2, 3], d["camera_ids"]
 by_cam = Counter()
 for fr in d["image_frames"]:
     by_cam.update(ob["camera_id"] for ob in fr["observations"])
-print("OK: num_cam=2, obs by camera:", dict(by_cam))
-assert by_cam[0] > 0 and by_cam[1] > 0
+print("OK: num_cam=4, obs by camera:", dict(sorted(by_cam.items())))
+assert all(by_cam[c] > 0 for c in (0, 1, 2, 3))
 PY
 ```
 
@@ -89,9 +89,9 @@ MPLBACKEND=Agg python3 data_generator/vis/python/visualize.py \
   data_generator/vis/output/sim_dump.json --save /tmp/sim_2cam_vis.png
 ```
 
-加载日志应含 `cam=2`。
+加载日志应含 `cam=4`。
 
-### 4. pybind 双相机加载
+### 4. pybind 四目加载
 
 ```bash
 export PYTHONPATH=$PWD/build_standalone/data_generator_vis:$PYTHONPATH
@@ -100,13 +100,13 @@ import vins_sim_data as s
 from collections import Counter
 opts = s.load_options("config/simulation/simulation_config.yaml")
 gen = s.DataGenerator(opts, False)
-assert gen.num_cameras() == 2
+assert gen.num_cameras() == 4
 for _ in range(opts.imu_per_img):
     gen.update()
 raw = gen.get_image()
 slots = Counter(p % gen.num_cameras() for p, _ in raw)
-print("OK: num_cameras=2, obs by slot:", dict(slots))
-assert slots[0] > 0 and slots[1] > 0
+print("OK: num_cameras=4, obs by slot:", dict(sorted(slots.items())))
+assert all(slots[k] > 0 for k in range(4))
 PY
 ```
 

@@ -159,8 +159,12 @@ class LiveSimViewer:
             label="landmarks",
         )
         (self.traj_line,) = self.ax3d.plot([], [], [], "b-", linewidth=1.5, label="IMU path")
-        self.obs_scatter = self.ax3d.scatter([], [], [], c="limegreen", s=16, alpha=0.9, label="observed feat")
-        self.new_obs_scatter = self.ax3d.scatter([], [], [], c="orange", s=24, alpha=0.95, label="new observed")
+        self.obs_scatter = self.ax3d.scatter(
+            [], [], [], c="limegreen", s=16, alpha=0.9, label="observed feat"
+        )
+        self.new_obs_scatter = self.ax3d.scatter(
+            [], [], [], c="orange", s=22, alpha=0.95, label="new observed"
+        )
         self.cam_points = []
         self.frustum_lines = []
         self._frustum_scale = 1.2
@@ -201,9 +205,20 @@ class LiveSimViewer:
         self.ax3d.set_ylim(mn[1], mx[1])
         self.ax3d.set_zlim(mn[2], mx[2])
 
+    def _fov_panel_rect(self, k: int) -> list[float]:
+        """Right-side FOV subplot [left, bottom, width, height] for camera index k."""
+        if self.num_cam >= 4:
+            col_w, row_h = 0.105, 0.19
+            left0, bottom0 = 0.755, 0.42
+            col = k % 2
+            row = 1 - k // 2
+            return [left0 + col * (col_w + 0.015), bottom0 + row * (row_h + 0.04), col_w, row_h]
+        panel_h = 0.28 / max(self.num_cam, 1)
+        bottom = 0.88 - (k + 1) * panel_h
+        return [0.78, bottom, 0.20, panel_h - 0.01]
+
     def _create_fov_panel(self):
         lim = float(self._tan_half_fov)
-        panel_h = 0.28 / max(self.num_cam, 1)
         top = 0.88
         self.fov_axes = []
         self.fov_all_scatter = []
@@ -211,8 +226,7 @@ class LiveSimViewer:
         self.fov_new_scatter = []
 
         for k, cam in enumerate(self.cam_extrinsics):
-            bottom = top - (k + 1) * panel_h
-            ax = self.fig.add_axes([0.78, bottom, 0.20, panel_h - 0.01])
+            ax = self.fig.add_axes(self._fov_panel_rect(k))
             ax.set_xlim(-lim, lim)
             ax.set_ylim(-lim, lim)
             ax.grid(True, alpha=0.25)
@@ -233,7 +247,11 @@ class LiveSimViewer:
             if k == 0:
                 ax.legend(loc="upper right", fontsize=6)
 
-        stats_bottom = top - self.num_cam * panel_h - 0.02
+        if self.num_cam >= 4:
+            stats_bottom = 0.36
+        else:
+            panel_h = 0.28 / max(self.num_cam, 1)
+            stats_bottom = top - self.num_cam * panel_h - 0.02
         self.obs_count_text = self.fig.text(
             0.79,
             stats_bottom,
@@ -302,20 +320,23 @@ class LiveSimViewer:
         else:
             self.fov_new_scatter[cam_idx].set_offsets(uv_new)
 
-    def _set_obs_points(self, observations, new_obs_ids: set[int], observed_world: np.ndarray):
-        if not observations or observed_world.size == 0:
-            self.obs_scatter._offsets3d = ([], [], [])
-            self.new_obs_scatter._offsets3d = ([], [], [])
-            return
-        n = min(len(observations), observed_world.shape[0])
-        pts = observed_world[:n]
-        self.obs_scatter._offsets3d = (pts[:, 0], pts[:, 1], pts[:, 2])
-        new_pts = [pts[i] for i, (fid, _, _) in enumerate(observations[:n]) if fid in new_obs_ids]
-        if new_pts:
-            new_pts_arr = np.asarray(new_pts, dtype=float)
-            self.new_obs_scatter._offsets3d = (new_pts_arr[:, 0], new_pts_arr[:, 1], new_pts_arr[:, 2])
+    def _set_obs_points(self) -> None:
+        """Highlight observed landmarks (union of all cameras), single color in 3D."""
+        empty = ([], [], [])
+        union_pts = np.asarray(self.gen.get_observed_points(), dtype=float)
+        if len(union_pts) > 0:
+            self.obs_scatter._offsets3d = (union_pts[:, 0], union_pts[:, 1], union_pts[:, 2])
         else:
-            self.new_obs_scatter._offsets3d = ([], [], [])
+            self.obs_scatter._offsets3d = empty
+
+        new_ids: set[int] = set()
+        for ids in self.gen.get_new_observed_landmark_ids():
+            new_ids.update(int(i) for i in ids)
+        if new_ids:
+            pts = self.landmarks[np.asarray(sorted(new_ids), dtype=int)]
+            self.new_obs_scatter._offsets3d = (pts[:, 0], pts[:, 1], pts[:, 2])
+        else:
+            self.new_obs_scatter._offsets3d = empty
 
     def _update_frustums(self, position: np.ndarray, r_wi: np.ndarray):
         s = self._frustum_scale
@@ -357,14 +378,13 @@ class LiveSimViewer:
             if self.publish_count % self.imu_per_img == 0:
                 raw = self.gen.get_image()
                 observations = unpack_observations(raw, self.num_cam)
-                observed_world = np.asarray(self.gen.get_observed_points(), dtype=float)
                 r_wi = np.asarray(self.gen.get_rotation(), dtype=float)
                 self.traj.append(pos.copy())
                 obs_ids = {fid for fid, _, _ in observations}
                 new_obs_ids = obs_ids - self.prev_obs_ids
                 self.prev_obs_ids = obs_ids
                 poses = self._update_frustums(pos, r_wi)
-                self._set_obs_points(observations, new_obs_ids, observed_world)
+                self._set_obs_points()
 
                 obs_by_slot = [0] * self.num_cam
                 for _, slot, _ in observations:

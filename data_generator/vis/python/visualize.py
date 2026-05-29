@@ -72,32 +72,6 @@ def _plot_frustum(ax, r_wc: np.ndarray, t_wc: np.ndarray, color, scale: float = 
         ax.plot(seg[:, 0], seg[:, 1], seg[:, 2], color=color, alpha=0.9, linewidth=1.2)
 
 
-def _ray_world_endpoints(
-    position: np.ndarray,
-    quat: np.ndarray,
-    extrinsics: list[dict],
-    observations: list,
-    ray_length: float,
-    max_rays: int,
-) -> dict[int, np.ndarray]:
-    """Map camera_id -> Nx3 world points at ray_length along each observation ray."""
-    by_cam: dict[int, list[np.ndarray]] = {}
-    for ob in observations[:max_rays]:
-        cam_id = int(ob["camera_id"])
-        ray = np.asarray(ob["ray_cam"], dtype=float).reshape(3)
-        norm = np.linalg.norm(ray)
-        if norm < 1e-9:
-            continue
-        ray = ray / norm
-        ex = next((e for e in extrinsics if e["camera_id"] == cam_id), None)
-        if ex is None:
-            continue
-        r_wc, t_wc = camera_pose_world(position, quat, ex["ric"], ex["tic"])
-        pt_w = t_wc + ray_length * (r_wc @ ray)
-        by_cam.setdefault(cam_id, []).append(pt_w)
-    return {cid: np.stack(pts, axis=0) for cid, pts in by_cam.items() if pts}
-
-
 def _obs_uv(ray_cam: np.ndarray) -> np.ndarray | None:
     z = float(ray_cam[2])
     if z <= 1e-9:
@@ -156,43 +130,33 @@ def _plot_3d_on_ax(
         quat = np.asarray(last["quaternion_wxyz"], dtype=float)
         observations = last.get("observations", [])
 
-        endpoints = _ray_world_endpoints(pos, quat, cams, observations, ray_length, max_rays_per_frame)
         for k, cam in enumerate(cams):
             cid = cam["camera_id"]
             color = colors[k % len(colors)]
             r_wc, t_wc = camera_pose_world(pos, quat, cam["ric"], cam["tic"])
             _plot_frustum(ax, r_wc, t_wc, color)
             ax.plot([t_wc[0]], [t_wc[1]], [t_wc[2]], "o", color=color, markersize=7, label=f"cam {cid}")
-            pts = endpoints.get(cid)
-            if pts is not None and len(pts) > 0:
-                ax.scatter(
-                    pts[:, 0],
-                    pts[:, 1],
-                    pts[:, 2],
-                    c=[color],
-                    s=18,
-                    alpha=0.85,
-                    label=f"obs cam{cid}",
-                )
 
-        if num_cam == 1 and not endpoints:
-            feat_ids = sorted({int(ob.get("feature_id", -1)) for ob in observations})
-            valid_ids = [fid for fid in feat_ids if 0 <= fid < len(landmarks)]
-            if valid_ids:
-                pts = landmarks[valid_ids]
-                ax.scatter(
-                    pts[:, 0],
-                    pts[:, 1],
-                    pts[:, 2],
-                    c="limegreen",
-                    s=16,
-                    alpha=0.9,
-                    label="observed feat",
-                )
+        lm_ids = last.get("observed_landmark_ids")
+        if lm_ids is not None:
+            valid_ids = [int(i) for i in lm_ids if 0 <= int(i) < len(landmarks)]
+        else:
+            valid_ids = []
+        if valid_ids:
+            pts = landmarks[valid_ids]
+            ax.scatter(
+                pts[:, 0],
+                pts[:, 1],
+                pts[:, 2],
+                c="limegreen",
+                s=16,
+                alpha=0.9,
+                label="observed feat",
+            )
 
     title = "GT: trajectory, landmarks"
     if num_cam >= 2:
-        title += f" ({num_cam} cams, color by camera)"
+        title += f" ({num_cam} cams)"
     ax.set_title(title)
     ax.set_xlabel("X [m]")
     ax.set_ylabel("Y [m]")
@@ -202,14 +166,26 @@ def _plot_3d_on_ax(
         ax.set_box_aspect([1, 1, 1])
 
 
+def _fov_grid_shape(n_cams: int) -> tuple[int, int]:
+    if n_cams >= 4:
+        return 2, 2
+    if n_cams == 3:
+        return 3, 1
+    return max(n_cams, 1), 1
+
+
 def _plot_fov_panels(fig, gs_fov, data: dict, frame_stride: int, colors: np.ndarray, cams: list[dict]) -> None:
     frames = data["image_frames"][::frame_stride]
     if not frames:
         return
     observations = frames[-1].get("observations", [])
-    fov_spec = gs_fov.subgridspec(len(cams), 1, hspace=0.4)
+    rows, cols = _fov_grid_shape(len(cams))
+    fov_spec = gs_fov.subgridspec(rows, cols, hspace=0.45, wspace=0.35)
     for k, cam in enumerate(cams):
-        ax = fig.add_subplot(fov_spec[k])
+        if cols == 1:
+            ax = fig.add_subplot(fov_spec[k, 0])
+        else:
+            ax = fig.add_subplot(fov_spec[k // cols, k % cols])
         _plot_fov_panel(ax, observations, colors[k % len(colors)], cam["camera_id"], f"cam {cam['camera_id']} FOV")
 
 
@@ -253,10 +229,13 @@ def build_figure(
     multi_cam = num_cam >= 2 and len(cams) >= 2
 
     if show_3d and show_imu:
-        fig_w = 14 if multi_cam else 11
+        fig_w = 15 if num_cam >= 4 else (14 if multi_cam else 11)
         fig = plt.figure(figsize=(fig_w, 12), constrained_layout=True)
         if multi_cam:
-            gs = gridspec.GridSpec(4, 2, width_ratios=[3.0, 1.0], height_ratios=[2.8, 1.0, 1.0, 1.0], figure=fig)
+            right_w = 1.4 if num_cam >= 4 else 1.0
+            gs = gridspec.GridSpec(
+                4, 2, width_ratios=[3.0, right_w], height_ratios=[2.8, 1.0, 1.0, 1.0], figure=fig
+            )
             ax3d = fig.add_subplot(gs[0, 0], projection="3d")
             _plot_fov_panels(fig, gs[0, 1], data, frame_stride, colors, cams)
             imu_axes = [fig.add_subplot(gs[i, :]) for i in (1, 2, 3)]
@@ -268,8 +247,10 @@ def build_figure(
         _plot_imu_on_axes(imu_axes, data)
     elif show_3d:
         if multi_cam:
-            fig = plt.figure(figsize=(13, 8), constrained_layout=True)
-            gs = gridspec.GridSpec(1, 2, width_ratios=[3.0, 1.0], figure=fig)
+            fig_w = 14 if num_cam >= 4 else 13
+            right_w = 1.4 if num_cam >= 4 else 1.0
+            fig = plt.figure(figsize=(fig_w, 8), constrained_layout=True)
+            gs = gridspec.GridSpec(1, 2, width_ratios=[3.0, right_w], figure=fig)
             ax3d = fig.add_subplot(gs[0, 0], projection="3d")
             _plot_fov_panels(fig, gs[0, 1], data, frame_stride, colors, cams)
         else:

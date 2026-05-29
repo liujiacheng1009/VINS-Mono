@@ -59,7 +59,12 @@ class DataGenerator
     static int const MAX_BOX = 10;
     static int const IMU_PER_WIFI = 5;
 
+  /** Union of landmark pool indices visible in the last getImage() (all cameras). */
     vector<Vector3d> output_gr_pts;
+    /** Per-slot landmark pool indices visible in the last getImage(). */
+    vector<vector<int>> output_gr_ids;
+    /** Per-slot landmark indices that received a new track_id this frame. */
+    vector<vector<int>> output_new_gr_ids;
     vector<Vector3d> output_Axis[6];
 
   private:

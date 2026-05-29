@@ -249,7 +249,7 @@ cmake -S standalone -B build_standalone && cmake --build build_standalone -j2
 
 ### 6.2 仅可视化仿真数据（不运行 VINS 估计器）
 
-在不运行 `vins_multi_simulation` 的情况下，查看 `DataGenerator` 的真值轨迹、IMU 与观测（当前默认**双相机**，见 `simulation_config.yaml` 中 `num_of_cam: 2`）：
+在不运行 `vins_multi_simulation` 的情况下，查看 `DataGenerator` 的真值轨迹、IMU 与观测（当前默认**四目**，见 `simulation_config.yaml` 中 `num_of_cam: 4`）：
 
 ```bash
 cd <仓库根目录>
@@ -262,7 +262,7 @@ pip install -r data_generator/vis/python/requirements.txt
 python3 data_generator/vis/python/visualize.py data_generator/vis/output/sim_dump.json
 ```
 
-**双相机冒烟验证**（导出 JSON 并断言两路均有观测）见 [`data_generator/vis/README.md`](data_generator/vis/README.md#双相机验证)。
+**多相机冒烟验证**（导出 JSON 并断言各路均有观测）见 [`data_generator/vis/README.md`](data_generator/vis/README.md#多相机验证四目)。
 
 无图形界面（如 SSH）保存图片：
 

@@ -3,6 +3,6 @@
 # DataGenerator simulation parameters (landmarks, FOV, image rate).
 # Camera extrinsics come from simulation_config + cam_chain; load via readParameters().
 
-num_points: 500
+num_points: 800
 fov_deg: 90
 imu_per_img: 50

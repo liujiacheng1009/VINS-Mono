@@ -1,14 +1,19 @@
-# Kalibr cam_chain for VINS-Multi simulation (stereo reference).
+# Kalibr cam_chain for VINS-Multi simulation (quad-camera rig).
 # Intrinsics / resolution match config/simulation/simulation_config.yaml:
 #   image_width=752, image_height=480, focal_length=460 (fu=fv).
-# Stereo baseline: 6 cm along +X in cam0 (cam1 to the right of cam0).
-# Distortion is zero (ideal pinhole simulation; model kept for Kalibr toolchain compatibility).
+# Distortion is zero (ideal pinhole simulation).
 #
-# IMU–cam0 extrinsics: config/simulation/cam_chain-imucam.yaml (T_cam_imu).
-# IMU–cam1+ : derived from cam0 and T_cn_cnm1 below.
+# Rig layout (symmetric about stereo baseline midpoint; camera +Z forward, +X right):
+#   cam0 — cam1 : forward stereo, 6 cm baseline along +X (same orientation).
+#   cam2 : 2 cm to the left of cam0 (−X), R_y(+90°), faces left.
+#   cam3 : 2 cm to the right of cam1 (+X), R_y(−90°), faces right.
+#   (cam0, cam2) and (cam1, cam3) are mirror pairs; |cam2 − cam3| = 10 cm.
+#
+# IMU–cam0: config/simulation/cam_chain-imucam.yaml (T_cam_imu).
+# IMU–cam1..3: composed from cam0 and T_cn_cnm1 below.
 
 cam0:
-  cam_overlaps: [1]
+  cam_overlaps: [1, 2]
   camera_model: pinhole
   distortion_coeffs: [0.0, 0.0, 0.0, 0.0]
   distortion_model: equidistant
@@ -22,10 +27,40 @@ cam1:
   - [0.0, 1.0, 0.0, 0.0]
   - [0.0, 0.0, 1.0, 0.0]
   - [0.0, 0.0, 0.0, 1.0]
-  cam_overlaps: [0]
+  cam_overlaps: [0, 3]
   camera_model: pinhole
   distortion_coeffs: [0.0, 0.0, 0.0, 0.0]
   distortion_model: equidistant
   intrinsics: [460.0, 460.0, 376.0, 240.0]
   resolution: [752, 480]
   rostopic: /cam1/image_raw
+
+cam2:
+  # T_c2_c1: cam2 origin 2 cm left of cam0; faces left (composed via cam1 in chain)
+  T_cn_cnm1:
+  - [0.0, 0.0, 1.0, 0.0]
+  - [0.0, 1.0, 0.0, 0.0]
+  - [-1.0, 0.0, 0.0, -0.08]
+  - [0.0, 0.0, 0.0, 1.0]
+  cam_overlaps: [0, 3]
+  camera_model: pinhole
+  distortion_coeffs: [0.0, 0.0, 0.0, 0.0]
+  distortion_model: equidistant
+  intrinsics: [460.0, 460.0, 376.0, 240.0]
+  resolution: [752, 480]
+  rostopic: /cam2/image_raw
+
+cam3:
+  # T_c3_c2: completes symmetric cam3 (2 cm right of cam1); cam2–cam3 spacing 10 cm
+  T_cn_cnm1:
+  - [-1.0, 0.0, 0.0, 0.0]
+  - [0.0, 1.0, 0.0, 0.0]
+  - [0.0, 0.0, -1.0, -0.10]
+  - [0.0, 0.0, 0.0, 1.0]
+  cam_overlaps: [1, 2]
+  camera_model: pinhole
+  distortion_coeffs: [0.0, 0.0, 0.0, 0.0]
+  distortion_model: equidistant
+  intrinsics: [460.0, 460.0, 376.0, 240.0]
+  resolution: [752, 480]
+  rostopic: /cam3/image_raw

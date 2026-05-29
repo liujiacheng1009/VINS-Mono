@@ -8,7 +8,7 @@ cam0:
   - [0.0, 0.0, 1.0, -0.6]
   - [-1.0, 0.0, 0.0, 0.0]
   - [0.0, 0.0, 0.0, 1.0]
-  cam_overlaps: [1]
+  cam_overlaps: [1, 2, 3]
   camera_model: pinhole
   distortion_coeffs: [0.0, 0.0, 0.0, 0.0]
   distortion_model: equidistant

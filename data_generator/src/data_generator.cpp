@@ -1,6 +1,7 @@
 #include "data_generator.h"
 
 #include <stdexcept>
+#include <unordered_map>
 
 // ODR definitions for static members exported to pybind (bindings.cpp).
 const int DataGenerator::FREQ;
@@ -349,11 +350,22 @@ vector<pair<int, Vector3d>> DataGenerator::getImage()
     }
 
     output_gr_pts.clear();
-    if (!gr_ids.empty())
+    output_gr_ids.assign(static_cast<size_t>(num_cam_), {});
+    output_new_gr_ids.assign(static_cast<size_t>(num_cam_), {});
+
+    for (int k = 0; k < num_cam_; k++)
+        output_gr_ids[static_cast<size_t>(k)] = gr_ids[static_cast<size_t>(k)];
+
+    std::unordered_map<int, bool> union_ids;
+    for (int k = 0; k < num_cam_; k++)
     {
-        for (auto i : gr_ids[0])
-            output_gr_pts.emplace_back(pts_[static_cast<size_t>(i * 3 + 0)], pts_[static_cast<size_t>(i * 3 + 1)],
-                                       pts_[static_cast<size_t>(i * 3 + 2)]);
+        for (int i : gr_ids[static_cast<size_t>(k)])
+        {
+            if (union_ids.emplace(i, true).second)
+                output_gr_pts.emplace_back(pts_[static_cast<size_t>(i * 3 + 0)],
+                                           pts_[static_cast<size_t>(i * 3 + 1)],
+                                           pts_[static_cast<size_t>(i * 3 + 2)]);
+        }
     }
 
     for (int k = 0; k < num_cam_; k++)
@@ -363,7 +375,10 @@ vector<pair<int, Vector3d>> DataGenerator::getImage()
         for (size_t i = 0; i < id_list.size(); i++)
         {
             if (id_list[i] == -1)
+            {
                 id_list[i] = current_id++;
+                output_new_gr_ids[static_cast<size_t>(k)].push_back(gr[i]);
+            }
             current_feature_id_[static_cast<size_t>(k)][gr[i]] = id_list[i];
         }
         std::swap(before_feature_id_[static_cast<size_t>(k)], current_feature_id_[static_cast<size_t>(k)]);

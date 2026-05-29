@@ -6,6 +6,7 @@
 #include <opencv2/core/eigen.hpp>
 
 #include <fstream>
+#include <stdexcept>
 
 namespace {
 
@@ -146,9 +147,9 @@ class ConfigLoader
             params_.setNumOfCam(1);
 
         if (!fs_["max_feature_count"].empty())
-            params_.setMaxFeatureCount(static_cast<int>(fs_["max_feature_count"]));
+            params_.setMaxFeatureCountPerCam(static_cast<int>(fs_["max_feature_count"]));
         else
-            params_.setMaxFeatureCount(1000);
+            params_.setMaxFeatureCountPerCam(1000);
 
         if (params_.windowSize() < 2)
         {
@@ -161,11 +162,11 @@ class ConfigLoader
             LOG_TXT_LEVEL(logging::ValueLogger::Level::WARNING, "num_of_cam ", params_.numOfCam(), " invalid, using 1");
             params_.setNumOfCam(1);
         }
-        if (params_.maxFeatureCount() < 10)
+        if (params_.maxFeatureCountPerCam() < 10)
         {
-            LOG_TXT_LEVEL(logging::ValueLogger::Level::WARNING, "max_feature_count ", params_.maxFeatureCount(),
-                          " too small, using 10");
-            params_.setMaxFeatureCount(10);
+            LOG_TXT_LEVEL(logging::ValueLogger::Level::WARNING, "max_feature_count (per cam) ",
+                          params_.maxFeatureCountPerCam(), " too small, using 10");
+            params_.setMaxFeatureCountPerCam(10);
         }
 
         std::vector<int> camera_ids = readCameraIds(fs_, params_.numOfCam());
@@ -346,9 +347,8 @@ class ConfigLoader
 
         for (int s = 0; s < params_.numOfCam() && s < static_cast<int>(params_.ric().size()); ++s)
         {
-            LOG_TXT("Extrinsic slot ", s, " (cam", params_.cameraId(s), ") R:\n", params_.ric()[static_cast<size_t>(s)]);
-            LOG_TXT("Extrinsic slot ", s, " (cam", params_.cameraId(s),
-                    ") T: ", params_.tic()[static_cast<size_t>(s)].transpose());
+            LOG_TXT("Extrinsic slot ", s, " (cam", params_.cameraId(s), ") R:\n", params_.ric(s));
+            LOG_TXT("Extrinsic slot ", s, " (cam", params_.cameraId(s), ") T: ", params_.tic(s).transpose());
         }
     }
 
@@ -385,6 +385,30 @@ VinsParameters &VinsParameters::instance()
 {
     static VinsParameters params;
     return params;
+}
+
+namespace {
+
+int slotForCameraId(const VinsParameters &p, int camera_id)
+{
+    for (int s = 0; s < p.numOfCam(); ++s)
+    {
+        if (p.cameraId(s) == camera_id)
+            return s;
+    }
+    throw std::runtime_error("camera_id not in active camera_ids");
+}
+
+} // namespace
+
+const Eigen::Matrix3d &VinsParameters::ricForCamera(int camera_id) const
+{
+    return ric(slotForCameraId(*this, camera_id));
+}
+
+const Eigen::Vector3d &VinsParameters::ticForCamera(int camera_id) const
+{
+    return tic(slotForCameraId(*this, camera_id));
 }
 
 void VinsParameters::loadFromConfig(const std::string &config_file)

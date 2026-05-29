@@ -37,6 +37,14 @@ def camera_pose_world(position: np.ndarray, quat: np.ndarray, ric: np.ndarray, t
     return r_wc, t_wc
 
 
+def _extrinsic_by_camera_id(extrinsics: list) -> dict:
+    out = {}
+    for i, ex in enumerate(extrinsics):
+        cid = ex.get("camera_id", ex.get("slot", i))
+        out[int(cid)] = (np.asarray(ex["ric"], dtype=float), np.asarray(ex["tic"], dtype=float))
+    return out
+
+
 def _plot_3d_on_ax(
     ax,
     data: dict,

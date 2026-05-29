@@ -29,8 +29,23 @@ class VinsParameters
     const std::vector<int> &cameraIds() const { return camera_ids_; }
     void setCameraIds(std::vector<int> ids) { camera_ids_ = std::move(ids); }
 
-    int maxFeatureCount() const { return max_feature_count_; }
-    void setMaxFeatureCount(int v) { max_feature_count_ = v; }
+    /** IMU–camera extrinsic for estimator slot \a slot (same order as cameraIds()). */
+    const Eigen::Matrix3d &ric(int slot) const { return ric_.at(static_cast<size_t>(slot)); }
+    const Eigen::Vector3d &tic(int slot) const { return tic_.at(static_cast<size_t>(slot)); }
+
+    /** IMU–camera extrinsic for physical camera \a camera_id (must be in cameraIds()). */
+    const Eigen::Matrix3d &ricForCamera(int camera_id) const;
+    const Eigen::Vector3d &ticForCamera(int camera_id) const;
+
+    /** Per-camera feature pool limit; total Ceres slots = perCam * numOfCam(). */
+    int maxFeatureCountPerCam() const { return max_feature_count_per_cam_; }
+    int maxFeatureCount() const
+    {
+        return max_feature_count_per_cam_ * (num_of_cam_ >= 1 ? num_of_cam_ : 1);
+    }
+    void setMaxFeatureCountPerCam(int v) { max_feature_count_per_cam_ = v; }
+    /** @deprecated alias for setMaxFeatureCountPerCam */
+    void setMaxFeatureCount(int v) { setMaxFeatureCountPerCam(v); }
 
     double focalLength() const { return focal_length_; }
     void setFocalLength(double v) { focal_length_ = v; }
@@ -54,7 +69,6 @@ class VinsParameters
     void setGyrRandomWalk(double v) { gyr_w_ = v; }
 
     const std::vector<Eigen::Matrix3d> &ric() const { return ric_; }
-    std::vector<Eigen::Matrix3d> &ric() { return ric_; }
     void setRic(std::vector<Eigen::Matrix3d> v) { ric_ = std::move(v); }
     void clearExtrinsics() { ric_.clear(); tic_.clear(); }
     void addExtrinsic(const Eigen::Matrix3d &R, const Eigen::Vector3d &T)
@@ -106,7 +120,7 @@ class VinsParameters
     int window_size_ = 10;
     int num_of_cam_ = 1;
     std::vector<int> camera_ids_{0};
-    int max_feature_count_ = 1000;
+    int max_feature_count_per_cam_ = 1000;
     double focal_length_ = 460.0;
     double init_depth_ = 5.0;
     double min_parallax_ = 0.0;

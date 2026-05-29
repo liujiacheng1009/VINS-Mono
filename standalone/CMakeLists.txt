@@ -18,6 +18,8 @@ add_subdirectory(../third_party/log_value ${CMAKE_BINARY_DIR}/third_party/log_va
 add_executable(vins_multi_simulation
     simulation_standalone.cpp
     ../data_generator/src/data_generator.cpp
+    ../data_generator/src/data_generator_options.cpp
+    ../data_generator/src/data_generator_config.cpp
     ../vins_estimator/src/parameters.cpp
     ../vins_estimator/src/cam_chain.cpp
     ../vins_estimator/src/estimator.cpp

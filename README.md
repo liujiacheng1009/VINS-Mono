@@ -227,7 +227,7 @@ dpkg -s libeigen3-dev | grep Version
 cd <仓库根目录>   # 例如 ~/workspace/VINS-Multi
 cmake -S standalone -B build_standalone
 cmake --build build_standalone -j$(nproc)
-./build_standalone/vins_multi_simulation ./config/simulation/simulation_config.yaml
+./build_standalone/vins_multi_simulation config/simulation/simulation_config.yaml
 ```
 
 或运行回归测试：
@@ -249,17 +249,20 @@ cmake -S standalone -B build_standalone && cmake --build build_standalone -j2
 
 ### 6.2 仅可视化仿真数据（不运行 VINS 估计器）
 
-在不运行 `vins_multi_simulation` 的情况下，查看 `DataGenerator` 的真值轨迹、IMU 与单相机观测射线：
+在不运行 `vins_multi_simulation` 的情况下，查看 `DataGenerator` 的真值轨迹、IMU 与观测（当前默认**双相机**，见 `simulation_config.yaml` 中 `num_of_cam: 2`）：
 
 ```bash
 cd <仓库根目录>
 cmake -S standalone -B build_standalone
 cmake --build build_standalone --target sim_generator_dump -j$(nproc)
 
-./build_standalone/sim_generator_dump data_generator/vis/output/sim_dump.json
+./build_standalone/sim_generator_dump data_generator/vis/output/sim_dump.json 3.0 \
+  config/simulation/simulation_config.yaml
 pip install -r data_generator/vis/python/requirements.txt
 python3 data_generator/vis/python/visualize.py data_generator/vis/output/sim_dump.json
 ```
+
+**双相机冒烟验证**（导出 JSON 并断言两路均有观测）见 [`data_generator/vis/README.md`](data_generator/vis/README.md#双相机验证)。
 
 无图形界面（如 SSH）保存图片：
 
@@ -280,7 +283,8 @@ MPLBACKEND=Agg python3 data_generator/vis/python/visualize.py data_generator/vis
 cmake -S standalone -B build_standalone -DBUILD_SIM_PYTHON=ON
 cmake --build build_standalone --target vins_sim_data -j$(nproc)
 export PYTHONPATH=$PWD/build_standalone/data_generator_vis:$PYTHONPATH
-python3 data_generator/vis/python/live_visualize.py --realtime
+python3 data_generator/vis/python/live_visualize.py --realtime \
+  --config config/simulation/simulation_config.yaml
 ```
 
 默认上 3D、下 IMU；仅 3D 用 `--no-imu`。已移除 `--imu` 参数（勿与 `--imu-samples` 混用）。

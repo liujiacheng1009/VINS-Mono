@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "../data_generator/src/data_generator.h"
+#include "../data_generator/src/data_generator_config.h"
 #include "../vins_estimator/src/estimator.h"
 #include "../vins_estimator/src/utility/image_frame_input.h"
 #include "../vins_estimator/src/parameters.h"
@@ -26,7 +27,25 @@ int main(int argc, char **argv)
     Estimator estimator;
     estimator.setParameter();
 
-    DataGenerator generator;
+    DataGeneratorOptions dg_opts;
+    try
+    {
+        dg_opts = dataGeneratorOptionsFromVinsParameters();
+        dataGeneratorLoadDefaultConfig(dg_opts);
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "DataGenerator config error: " << e.what() << "\n";
+        return 1;
+    }
+    if (dg_opts.num_cam != numOfCam())
+    {
+        std::cerr << "data_generator num_cam (" << dg_opts.num_cam << ") != num_of_cam (" << numOfCam() << ")\n";
+        return 1;
+    }
+    DataGenerator generator(dg_opts, false);
+    generator.setQuiet(true);
+    const int imu_per_img = generator.imuPerImage();
     int publish_count = 0;
     bool init_feature = false;
     double current_time = -1.0;
@@ -57,7 +76,7 @@ int main(int argc, char **argv)
             current_time = t;
         }
 
-        if (publish_count % DataGenerator::IMU_PER_IMG == 0)
+        if (publish_count % imu_per_img == 0)
         {
             const auto raw_features = generator.getImage();
             if (!init_feature)

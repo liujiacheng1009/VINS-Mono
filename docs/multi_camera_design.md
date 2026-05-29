@@ -149,6 +149,8 @@ extrinsics_by_cam_id[cam_id] = { ric, tic }
 
 ## 四、`data_generator` 改造清单
 
+> IMU / 视觉观测生成原理与流程：见 [`data_generator/doc/observation_generation.md`](../data_generator/doc/observation_generation.md)。
+
 ### 4.1 API 与构造
 
 | 项 | 动作 |
@@ -316,7 +318,7 @@ sequenceDiagram
 | 阶段 | 内容 | 依赖 |
 |------|------|------|
 | **P0** | `camera_ids` + `cam_chain*` 加载；`extrinsics_by_cam_id` 在读取时链式合成；`VinsParameters` / `StateManager` 按 `cam_id` 查表 | 无 |
-| **P1** | `DataGenerator` 运行时多目；**每路连续 track + 充分观测**；去掉 `k==1` 硬编码；与 YAML 对齐 | P0 |
+| **P1** | `DataGenerator` 运行时多目；**每路连续 track + 充分观测**；去掉 `k==1` 硬编码；与 YAML 对齐 | P0（**进行中**：已通过 `readParameters` + `cam_chain` 注入外参，`getImage()` 按 slot 独立 track；见 `data_generator_config.cpp`、`simulation_config_2cam.yaml`） |
 | **P2** | `FeaturePerFrame::camera_id` + `addFeature` 遍历；`FeaturePerId::anchor_cam` | P0 |
 | **P3** | `optimization` / 边缘化 `extrinsicParameter(cam)` | P2 |
 | **P4** | `triangulate` + `removeBackShiftDepth` 锚定相机外参 | P2, P3 |

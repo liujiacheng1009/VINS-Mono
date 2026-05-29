@@ -13,11 +13,11 @@ estimate_extrinsic: 0   # 0 fix, 1 optimize around prior, 2 calibrate (identity 
 
 # sliding window and camera layout
 window_size: 10
-num_of_cam: 1             # active camera slots in estimator
-camera_ids: [0]           # physical cam index per slot: [0], [0,1], or [1] for mono-right only
+num_of_cam: 2             # active camera slots in estimator
+camera_ids: [0, 1]        # physical cam index per slot: [0], [0,1], or [1] for mono-right only
 cam_chain_file: "cam_chain.yaml"
 cam_chain_imu_file: "cam_chain-imucam.yaml"
-max_feature_count: 1000
+max_feature_count: 1000       # per camera; total pool = value * num_of_cam
 
 #optimization parameters
 max_solver_time: 0.04
